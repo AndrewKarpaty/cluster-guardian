@@ -10,6 +10,9 @@ linters:
     - unconvert
     - unparam
   exclusions:
+    rules:
+      - path: _test\.go
+        linters: [unparam]
     presets:
       # Skips errcheck noise like fmt.Fprintf to an io.Writer and deferred
       # resp.Body.Close(); file closes after writes are still checked in code.

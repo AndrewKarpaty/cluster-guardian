@@ -10,6 +10,7 @@ import (
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
 	networkingv1 "k8s.io/api/networking/v1"
+	policyv1 "k8s.io/api/policy/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
@@ -47,6 +48,7 @@ type Snapshot struct {
 	Jobs                []batchv1.Job
 	CronJobs            []batchv1.CronJob
 	HPAs                []autoscalingv2.HorizontalPodAutoscaler
+	PDBs                []policyv1.PodDisruptionBudget
 	Services            []corev1.Service
 	Ingresses           []networkingv1.Ingress
 	NetworkPolicies     []networkingv1.NetworkPolicy
@@ -128,6 +130,9 @@ func (c *Client) Collect(ctx context.Context, namespaces []string) (*Snapshot, e
 	}
 	if v, err := c.Clientset.AutoscalingV2().HorizontalPodAutoscalers(metav1.NamespaceAll).List(ctx, opts); err == nil {
 		s.HPAs = v.Items
+	}
+	if v, err := c.Clientset.PolicyV1().PodDisruptionBudgets(metav1.NamespaceAll).List(ctx, opts); err == nil {
+		s.PDBs = v.Items
 	}
 	if v, err := c.Clientset.CoreV1().Services(metav1.NamespaceAll).List(ctx, opts); err == nil {
 		s.Services = v.Items

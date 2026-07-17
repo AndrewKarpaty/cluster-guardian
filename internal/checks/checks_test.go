@@ -7,9 +7,11 @@ import (
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	networkingv1 "k8s.io/api/networking/v1"
+	policyv1 "k8s.io/api/policy/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/util/intstr"
 
 	"github.com/AndrewKarpaty/cluster-guardian/internal/kube"
 	"github.com/AndrewKarpaty/cluster-guardian/internal/report"
@@ -192,6 +194,85 @@ func TestMonitoringMissingAlerts(t *testing.T) {
 	}
 	if !strings.Contains(f.Message, "Redis") || !strings.Contains(f.Message, "PostgreSQL") {
 		t.Errorf("expected Redis and PostgreSQL in %q", f.Message)
+	}
+}
+
+func TestDisruptionFindings(t *testing.T) {
+	labeled := func(d appsv1.Deployment, lbls map[string]string) appsv1.Deployment {
+		d.Spec.Template.Labels = lbls
+		return d
+	}
+	spread := func(d appsv1.Deployment) appsv1.Deployment {
+		d.Spec.Template.Spec.TopologySpreadConstraints = []corev1.TopologySpreadConstraint{
+			{MaxSkew: 1, TopologyKey: "topology.kubernetes.io/zone"},
+		}
+		return d
+	}
+	pdbFor := func(name string, lbls map[string]string, spec policyv1.PodDisruptionBudgetSpec) policyv1.PodDisruptionBudget {
+		spec.Selector = &metav1.LabelSelector{MatchLabels: lbls}
+		return policyv1.PodDisruptionBudget{
+			ObjectMeta: metav1.ObjectMeta{Namespace: "payments", Name: name},
+			Spec:       spec,
+		}
+	}
+
+	s := &kube.Snapshot{
+		Deployments: []appsv1.Deployment{
+			// No PDB, no spread constraints -> flagged twice.
+			labeled(deployment("payments", "api", "img:v1", 3), map[string]string{"app": "api"}),
+			// Covered by a PDB, has spread constraints, but the PDB blocks drains.
+			spread(labeled(deployment("payments", "web", "img:v1", 3), map[string]string{"app": "web"})),
+			// Single replica: out of scope for disruption checks.
+			deployment("payments", "solo", "img:v1", 1),
+		},
+		StatefulSets: []appsv1.StatefulSet{{
+			ObjectMeta: metav1.ObjectMeta{Namespace: "payments", Name: "db"},
+			Spec: appsv1.StatefulSetSpec{
+				Replicas: int32Ptr(3),
+				Template: corev1.PodTemplateSpec{
+					ObjectMeta: metav1.ObjectMeta{Labels: map[string]string{"app": "db"}},
+					Spec:       corev1.PodSpec{Containers: []corev1.Container{{Name: "db", Image: "img:v1"}}},
+				},
+			},
+		}},
+		PDBs: []policyv1.PodDisruptionBudget{
+			pdbFor("web-pdb", map[string]string{"app": "web"}, policyv1.PodDisruptionBudgetSpec{
+				MaxUnavailable: &intstr.IntOrString{Type: intstr.Int, IntVal: 0},
+			}),
+			// minAvailable == replicas also allows zero disruptions.
+			pdbFor("db-pdb", map[string]string{"app": "db"}, policyv1.PodDisruptionBudgetSpec{
+				MinAvailable: &intstr.IntOrString{Type: intstr.Int, IntVal: 3},
+			}),
+		},
+	}
+
+	fs := disruptionFindings(s, "payments")
+
+	f := findMessage(fs, "without a PodDisruptionBudget")
+	if f == nil || !strings.Contains(f.Message, "api") {
+		t.Errorf("expected api flagged without a PDB, got: %+v", messages(fs))
+	}
+	if f != nil && (strings.Contains(f.Message, "web") || strings.Contains(f.Message, "solo")) {
+		t.Errorf("web (covered) and solo (single replica) must not be flagged: %q", f.Message)
+	}
+	var zeroDisruption []string
+	for _, f := range fs {
+		if strings.Contains(f.Message, "zero voluntary disruptions") {
+			zeroDisruption = append(zeroDisruption, f.Message)
+			if f.Severity != report.SeverityWarning {
+				t.Errorf("zero-disruption PDB should be a warning, got %s", f.Severity)
+			}
+		}
+	}
+	if len(zeroDisruption) != 2 {
+		t.Errorf("expected web-pdb and db-pdb flagged as blocking, got: %v", zeroDisruption)
+	}
+	f = findMessage(fs, "topologySpreadConstraints")
+	if f == nil || !strings.Contains(f.Message, "api") || !strings.Contains(f.Message, "db") {
+		t.Errorf("expected api and db flagged without spreading, got: %+v", messages(fs))
+	}
+	if f != nil && strings.Contains(f.Message, "web") {
+		t.Errorf("web has spread constraints and must not be flagged: %q", f.Message)
 	}
 }
 
