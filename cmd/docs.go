@@ -34,17 +34,23 @@ var docsCmd = &cobra.Command{
 			name = client.Context
 		}
 
-		out := io.Writer(cmd.OutOrStdout())
+		out := cmd.OutOrStdout()
+		var closer io.Closer
 		if flagDocsFile != "" {
 			f, err := os.Create(flagDocsFile)
 			if err != nil {
 				return err
 			}
-			defer f.Close()
-			out = f
+			out, closer = f, f
 		}
 		namespaces := snapshot.AppNamespaces(flagIncludeSystem, flagNamespaces)
-		if err := docs.Write(out, snapshot, name, namespaces); err != nil {
+		err = docs.Write(out, snapshot, name, namespaces)
+		if closer != nil {
+			if cerr := closer.Close(); cerr != nil && err == nil {
+				err = cerr
+			}
+		}
+		if err != nil {
 			return err
 		}
 		if flagDocsFile != "" {

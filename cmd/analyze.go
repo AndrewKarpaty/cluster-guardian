@@ -76,7 +76,9 @@ var analyzeCmd = &cobra.Command{
 			return fmt.Errorf("unknown output format %q (use terminal, json, markdown or html)", flagOutput)
 		}
 		if closer != nil {
-			closer.Close()
+			if cerr := closer.Close(); cerr != nil && err == nil {
+				err = cerr
+			}
 		}
 		if err != nil {
 			return err
@@ -90,16 +92,16 @@ var analyzeCmd = &cobra.Command{
 }
 
 func checkFailThreshold(r *report.Report) error {
-	max := r.MaxSeverity()
+	highest := r.MaxSeverity()
 	switch flagFailOn {
 	case "", "none":
 		return nil
 	case "warning":
-		if max >= report.SeverityWarning {
+		if highest >= report.SeverityWarning {
 			return failError{code: 2}
 		}
 	case "critical":
-		if max >= report.SeverityCritical {
+		if highest >= report.SeverityCritical {
 			return failError{code: 3}
 		}
 	default:

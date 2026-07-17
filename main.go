@@ -1,3 +1,5 @@
+// Command cluster-guardian analyzes a Kubernetes cluster and reports
+// reliability, security, monitoring and cost findings.
 package main
 
 import (

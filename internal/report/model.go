@@ -1,3 +1,5 @@
+// Package report defines the analysis result model and its renderers
+// (terminal, JSON, Markdown, HTML).
 package report
 
 import (
@@ -9,6 +11,7 @@ import (
 // Severity of a single finding.
 type Severity int
 
+// Severity levels, ordered from least to most severe.
 const (
 	SeverityOK Severity = iota
 	SeverityInfo
@@ -30,10 +33,12 @@ func (s Severity) String() string {
 	return "unknown"
 }
 
+// MarshalJSON encodes the severity as its string name.
 func (s Severity) MarshalJSON() ([]byte, error) {
 	return json.Marshal(s.String())
 }
 
+// UnmarshalJSON decodes a severity from its string name.
 func (s *Severity) UnmarshalJSON(data []byte) error {
 	var v string
 	if err := json.Unmarshal(data, &v); err != nil {
@@ -70,6 +75,7 @@ type Section struct {
 	Findings []Finding `json:"findings"`
 }
 
+// MaxSeverity returns the highest severity among the section's findings.
 func (s Section) MaxSeverity() Severity { return maxSeverity(s.Findings) }
 
 // NamespaceSection holds per-namespace workload findings.
@@ -78,6 +84,7 @@ type NamespaceSection struct {
 	Findings []Finding `json:"findings"`
 }
 
+// MaxSeverity returns the highest severity among the namespace's findings.
 func (n NamespaceSection) MaxSeverity() Severity { return maxSeverity(n.Findings) }
 
 // Summary aggregates finding counts across the whole report.
@@ -127,26 +134,26 @@ func (r *Report) Finalize() {
 
 // MaxSeverity returns the highest severity present anywhere in the report.
 func (r *Report) MaxSeverity() Severity {
-	max := SeverityOK
+	highest := SeverityOK
 	for _, ns := range r.Namespaces {
-		if v := ns.MaxSeverity(); v > max {
-			max = v
+		if v := ns.MaxSeverity(); v > highest {
+			highest = v
 		}
 	}
 	for _, sec := range r.Sections {
-		if v := sec.MaxSeverity(); v > max {
-			max = v
+		if v := sec.MaxSeverity(); v > highest {
+			highest = v
 		}
 	}
-	return max
+	return highest
 }
 
 func maxSeverity(fs []Finding) Severity {
-	max := SeverityOK
+	highest := SeverityOK
 	for _, f := range fs {
-		if f.Severity > max {
-			max = f.Severity
+		if f.Severity > highest {
+			highest = f.Severity
 		}
 	}
-	return max
+	return highest
 }

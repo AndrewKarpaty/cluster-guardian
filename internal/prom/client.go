@@ -13,11 +13,13 @@ import (
 	"time"
 )
 
+// Client talks to a Prometheus server's HTTP API.
 type Client struct {
 	BaseURL string
 	HTTP    *http.Client
 }
 
+// NewClient returns a Client for the Prometheus server at baseURL.
 func NewClient(baseURL string) *Client {
 	return &Client{
 		BaseURL: baseURL,

@@ -1,3 +1,5 @@
+// Package kube reads cluster state into a point-in-time Snapshot that the
+// checks consume.
 package kube
 
 import (

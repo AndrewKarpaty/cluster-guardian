@@ -9,11 +9,13 @@ Cluster Guardian is a Go CLI (with an optional web dashboard) that analyzes a Ku
 ## Commands
 
 ```sh
-go build -o cluster-guardian .      # build the binary
-go test ./...                        # run all tests
+make build                           # build the binary (or: go build -o cluster-guardian .)
+make test                            # go test -race ./...
+make lint                            # golangci-lint run (config: .golangci.yml)
 go test ./internal/checks/ -run TestSecurity -v   # run a single test
-go vet ./...
 ```
+
+CI (`.github/workflows/ci.yml`) runs build, vet, `test -race`, and golangci-lint on every PR. Pushing a `v*` tag triggers `release.yml`: GoReleaser builds binaries (version injected into `cmd.Version` via ldflags) and a multi-arch Docker image is pushed to `ghcr.io/andrewkarpaty/cluster-guardian`.
 
 Running locally requires a reachable cluster via kubeconfig:
 

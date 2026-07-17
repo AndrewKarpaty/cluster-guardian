@@ -1,0 +1,21 @@
+version: "2"
+
+linters:
+  default: standard
+  enable:
+    - copyloopvar
+    - gocritic
+    - misspell
+    - revive
+    - unconvert
+    - unparam
+  exclusions:
+    presets:
+      # Skips errcheck noise like fmt.Fprintf to an io.Writer and deferred
+      # resp.Body.Close(); file closes after writes are still checked in code.
+      - std-error-handling
+
+formatters:
+  enable:
+    - gofmt
+    - goimports

@@ -26,15 +26,17 @@ type Server struct {
 	cachedAt time.Time
 }
 
+// New returns a Server that analyzes via client and caches reports for cacheTTL.
 func New(client *kube.Client, opts analyzer.Options, cacheTTL time.Duration) *Server {
 	return &Server{client: client, opts: opts, ttl: cacheTTL}
 }
 
+// Handler returns the HTTP routes for the dashboard, REST API and health probe.
 func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
-		w.Write([]byte("ok"))
+		_, _ = w.Write([]byte("ok"))
 	})
 	mux.HandleFunc("GET /api/report", s.handleReport(report.WriteJSON, "application/json"))
 	mux.HandleFunc("GET /api/report/markdown", s.handleReport(report.WriteMarkdown, "text/markdown; charset=utf-8"))

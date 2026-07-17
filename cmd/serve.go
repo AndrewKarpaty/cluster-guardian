@@ -22,7 +22,7 @@ var serveCmd = &cobra.Command{
   GET /api/report          report as JSON (append ?refresh=true to bypass cache)
   GET /api/report/markdown report as Markdown
   GET /healthz             liveness probe`,
-	RunE: func(cmd *cobra.Command, _ []string) error {
+	RunE: func(_ *cobra.Command, _ []string) error {
 		client, err := newKubeClient()
 		if err != nil {
 			return err

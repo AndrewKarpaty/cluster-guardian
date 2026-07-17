@@ -1,3 +1,6 @@
+// Package checks contains the analysis checks. Each check is a pure function
+// over a kube.Snapshot producing report findings, which keeps them
+// unit-testable without a cluster.
 package checks
 
 import (
@@ -304,12 +307,12 @@ func plural(n int, one, many string) string {
 	return many
 }
 
-func joinLimited(names []string, max int) string {
+func joinLimited(names []string, limit int) string {
 	sort.Strings(names)
-	if len(names) <= max {
+	if len(names) <= limit {
 		return strings.Join(names, ", ")
 	}
-	return fmt.Sprintf("%s and %d more", strings.Join(names[:max], ", "), len(names)-max)
+	return fmt.Sprintf("%s and %d more", strings.Join(names[:limit], ", "), len(names)-limit)
 }
 
 func sortedKeys(m map[string]int) []string {

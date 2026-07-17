@@ -111,7 +111,7 @@ func unscrapedServices(s *kube.Snapshot, nsSet map[string]bool) (int, []string) 
 func serviceMonitorMatches(sm unstructured.Unstructured, svcNamespace string, svcLabels map[string]string) bool {
 	// Namespace selector: default is the ServiceMonitor's own namespace.
 	nsOK := sm.GetNamespace() == svcNamespace
-	if any, found, _ := unstructured.NestedBool(sm.Object, "spec", "namespaceSelector", "any"); found && any {
+	if matchAny, found, _ := unstructured.NestedBool(sm.Object, "spec", "namespaceSelector", "any"); found && matchAny {
 		nsOK = true
 	}
 	if names, found, _ := unstructured.NestedStringSlice(sm.Object, "spec", "namespaceSelector", "matchNames"); found {
