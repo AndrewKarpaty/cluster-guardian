@@ -55,6 +55,21 @@ cd cluster-guardian
 go build -o cluster-guardian .
 ```
 
+### Docker
+
+```sh
+docker build -t cluster-guardian .
+
+# CLI: analyze using your local kubeconfig
+docker run --rm -v ~/.kube:/kube:ro -e KUBECONFIG=/kube/config cluster-guardian
+
+# Dashboard: bind to 0.0.0.0 so the published port is reachable
+docker run --rm -p 8080:8080 -v ~/.kube:/kube:ro -e KUBECONFIG=/kube/config \
+  cluster-guardian serve --listen 0.0.0.0:8080
+```
+
+When running in-cluster (e.g. as a Deployment for the dashboard), no kubeconfig is needed — the ServiceAccount token is picked up automatically.
+
 ## Usage
 
 Analyze the cluster from your current kubeconfig context:
