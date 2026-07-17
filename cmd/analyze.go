@@ -1,0 +1,121 @@
+package cmd
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"io"
+	"os"
+	"time"
+
+	"github.com/spf13/cobra"
+
+	"github.com/AndrewKarpaty/cluster-guardian/internal/analyzer"
+	"github.com/AndrewKarpaty/cluster-guardian/internal/report"
+)
+
+var (
+	flagOutput     string
+	flagOutputFile string
+	flagFailOn     string
+	flagVerbose    bool
+	flagNoColor    bool
+)
+
+// failError carries the exit code for --fail-on threshold violations, so CI
+// pipelines can gate on findings.
+type failError struct{ code int }
+
+func (e failError) Error() string { return "findings at or above the --fail-on threshold" }
+
+func failCode(err error) (int, bool) {
+	var fe failError
+	if errors.As(err, &fe) {
+		return fe.code, true
+	}
+	return 0, false
+}
+
+var analyzeCmd = &cobra.Command{
+	Use:   "analyze",
+	Short: "Analyze the cluster and print a report",
+	RunE: func(cmd *cobra.Command, _ []string) error {
+		client, err := newKubeClient()
+		if err != nil {
+			return err
+		}
+		ctx, cancel := context.WithTimeout(cmd.Context(), 3*time.Minute)
+		defer cancel()
+
+		r, err := analyzer.Run(ctx, client, analyzerOptions())
+		if err != nil {
+			return err
+		}
+
+		out := cmd.OutOrStdout()
+		var closer io.Closer
+		if flagOutputFile != "" {
+			f, err := os.Create(flagOutputFile)
+			if err != nil {
+				return err
+			}
+			out, closer = f, f
+		}
+
+		switch flagOutput {
+		case "terminal", "":
+			noColor := flagNoColor || os.Getenv("NO_COLOR") != "" || flagOutputFile != ""
+			report.WriteTerminal(out, r, report.TerminalOptions{NoColor: noColor, Verbose: flagVerbose})
+		case "json":
+			err = report.WriteJSON(out, r)
+		case "markdown", "md":
+			err = report.WriteMarkdown(out, r)
+		case "html":
+			err = report.WriteHTML(out, r)
+		default:
+			return fmt.Errorf("unknown output format %q (use terminal, json, markdown or html)", flagOutput)
+		}
+		if closer != nil {
+			closer.Close()
+		}
+		if err != nil {
+			return err
+		}
+		if flagOutputFile != "" {
+			fmt.Fprintf(cmd.OutOrStdout(), "Report written to %s\n", flagOutputFile)
+		}
+
+		return checkFailThreshold(r)
+	},
+}
+
+func checkFailThreshold(r *report.Report) error {
+	max := r.MaxSeverity()
+	switch flagFailOn {
+	case "", "none":
+		return nil
+	case "warning":
+		if max >= report.SeverityWarning {
+			return failError{code: 2}
+		}
+	case "critical":
+		if max >= report.SeverityCritical {
+			return failError{code: 3}
+		}
+	default:
+		return fmt.Errorf("unknown --fail-on value %q (use none, warning or critical)", flagFailOn)
+	}
+	return nil
+}
+
+func init() {
+	for _, cmd := range []*cobra.Command{analyzeCmd, rootCmd} {
+		f := cmd.Flags()
+		f.StringVarP(&flagOutput, "output", "o", "terminal", "output format: terminal, json, markdown, html")
+		f.StringVar(&flagOutputFile, "output-file", "", "write the report to a file instead of stdout")
+		f.StringVar(&flagFailOn, "fail-on", "none", "exit non-zero if findings reach this severity: none, warning, critical")
+		f.BoolVarP(&flagVerbose, "verbose", "v", false, "show remediation hints for each finding")
+		f.BoolVar(&flagNoColor, "no-color", false, "disable colored output")
+	}
+	rootCmd.AddCommand(analyzeCmd)
+}
