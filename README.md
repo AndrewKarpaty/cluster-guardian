@@ -1,5 +1,22 @@
 # Cluster Guardian
 
+[![Build Status][actions-badge]][actions-url]
+[![Go Reference][godoc-badge]][godoc-url]
+[![Go Report Card][goreport-badge]][goreport-url]
+[![Release][release-badge]][release-url]
+[![License: MIT][license-badge]][license-url]
+
+[actions-badge]: https://github.com/AndrewKarpaty/cluster-guardian/actions/workflows/ci.yml/badge.svg
+[actions-url]: https://github.com/AndrewKarpaty/cluster-guardian/actions/workflows/ci.yml
+[godoc-badge]: https://pkg.go.dev/badge/github.com/AndrewKarpaty/cluster-guardian.svg
+[godoc-url]: https://pkg.go.dev/github.com/AndrewKarpaty/cluster-guardian
+[goreport-badge]: https://goreportcard.com/badge/github.com/AndrewKarpaty/cluster-guardian
+[goreport-url]: https://goreportcard.com/report/github.com/AndrewKarpaty/cluster-guardian
+[release-badge]: https://img.shields.io/github/v/release/AndrewKarpaty/cluster-guardian?include_prereleases
+[release-url]: https://github.com/AndrewKarpaty/cluster-guardian/releases
+[license-badge]: https://img.shields.io/badge/License-MIT-blue.svg
+[license-url]: LICENSE
+
 Cluster Guardian is an open-source tool that analyzes Kubernetes clusters and provides actionable recommendations for improving reliability, security, performance, and operational efficiency.
 
 ```
