@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project
 
-Cluster Guardian is a Go CLI (with an optional web dashboard) that analyzes a Kubernetes cluster and reports findings on workload health, security, monitoring coverage, GitOps status, and cost optimization. Module path: `github.com/AndrewKarpaty/cluster-guardian`. Go version is pinned in `.go-version` (1.23.5).
+Cluster Guardian is a Go CLI (with an optional web dashboard) that analyzes a Kubernetes cluster and reports findings on workload health, security, monitoring coverage, GitOps status, and cost optimization. Module path: `github.com/AndrewKarpaty/cluster-guardian`. Go version is pinned in `.go-version`.
 
 ## Commands
 
