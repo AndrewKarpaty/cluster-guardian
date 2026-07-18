@@ -1,0 +1,39 @@
+Cluster Guardian is deployed.
+
+Open the dashboard:
+
+  kubectl -n {{ .Release.Namespace }} port-forward svc/{{ include "cluster-guardian.fullname" . }} 8080:{{ .Values.service.port }}
+  open http://127.0.0.1:8080
+
+{{- if .Values.fleet.enabled }}
+
+Fleet mode is ON. Register additional clusters by creating Secrets in the
+"{{ .Release.Namespace }}" namespace (the local cluster is included
+automatically):
+
+  apiVersion: v1
+  kind: Secret
+  metadata:
+    name: cluster-prod
+    namespace: {{ .Release.Namespace }}
+    labels:
+      cluster-guardian.io/secret-type: cluster
+  stringData:
+    name: prod
+    server: https://prod.example.com:6443
+    config: |
+      {"bearerToken": "<token of a read-only ServiceAccount>", "tlsClientConfig": {"caData": "<base64 CA>"}}
+
+SECURITY: this instance holds credentials for every registered cluster.
+Restrict access to the "{{ .Release.Namespace }}" namespace, keep the
+NetworkPolicy enabled, and grant target ServiceAccounts only view-level
+access.
+{{- end }}
+
+{{- if not .Values.persistence.enabled }}
+
+Note: report history is in-memory only and resets on restart. Enable
+persistence to keep trends across restarts:
+
+  --set persistence.enabled=true
+{{- end }}

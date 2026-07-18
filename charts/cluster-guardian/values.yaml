@@ -1,0 +1,134 @@
+replicaCount: 1
+
+image:
+  repository: ghcr.io/andrewkarpaty/cluster-guardian
+  # Defaults to "v<appVersion>" of the chart.
+  tag: ""
+  pullPolicy: IfNotPresent
+
+imagePullSecrets: []
+nameOverride: ""
+fullnameOverride: ""
+
+serviceAccount:
+  create: true
+  annotations: {}
+  name: ""
+
+rbac:
+  # Create the read-only ClusterRole/ClusterRoleBinding the analyzer needs.
+  create: true
+  # Include cluster-wide read access to Secrets. Needed for the unused-secret
+  # and TLS-certificate checks (only names, types and tls.crt are read; secret
+  # payloads are stripped in memory). Set false to run without it — the
+  # affected checks skip silently.
+  includeSecrets: true
+
+# Analyzer options.
+clusterName: ""
+prometheusUrl: ""
+includeSystem: false
+# Restrict analysis to these namespaces (empty = all non-system).
+namespaces: []
+# Extra CLI args appended to `serve` (e.g. "--cache-ttl=120s").
+extraArgs: []
+
+history:
+  # Number of analysis runs kept for trends and diffs.
+  limit: 100
+
+persistence:
+  # Persist report history across restarts on a PVC (mounted at /data).
+  enabled: false
+  size: 1Gi
+  storageClass: ""
+  accessModes:
+    - ReadWriteOnce
+  annotations: {}
+
+fleet:
+  # Fleet mode: scan clusters registered via Secrets labeled
+  # cluster-guardian.io/secret-type=cluster in the release namespace and serve
+  # the multi-cluster scorecard.
+  enabled: false
+  interval: 5m
+
+service:
+  type: ClusterIP
+  port: 80
+
+ingress:
+  enabled: false
+  className: ""
+  annotations: {}
+  hosts:
+    - host: cluster-guardian.local
+      paths:
+        - path: /
+          pathType: Prefix
+  tls: []
+
+# Gateway API alternative to Ingress (requires the Gateway API CRDs and a
+# provisioned Gateway).
+httpRoute:
+  enabled: false
+  annotations: {}
+  # Gateways to attach to.
+  parentRefs: []
+  #  - name: my-gateway
+  #    namespace: gateway-system
+  #    sectionName: https
+  hostnames: []
+  #  - cluster-guardian.example.com
+  # Route matches; defaults to everything under /.
+  matches:
+    - path:
+        type: PathPrefix
+        value: /
+
+networkPolicy:
+  # Restrict traffic to/from the pod. Ingress is limited to the HTTP port;
+  # egress allows DNS and HTTPS/API-server ports (needed to reach the local
+  # and, in fleet mode, remote API servers).
+  enabled: true
+  # Additional ingress "from" selectors; empty allows any source on the HTTP
+  # port. Example:
+  #   ingressFrom:
+  #     - namespaceSelector:
+  #         matchLabels: { kubernetes.io/metadata.name: ingress-nginx }
+  ingressFrom: []
+  # Extra egress rules, e.g. to reach Prometheus:
+  #   extraEgress:
+  #     - to:
+  #         - namespaceSelector:
+  #             matchLabels: { kubernetes.io/metadata.name: monitoring }
+  #       ports:
+  #         - port: 9090
+  #           protocol: TCP
+  extraEgress: []
+
+# The defaults pass cluster-guardian's own checks: non-root, read-only root
+# filesystem, no privilege escalation, seccomp, requests and limits set.
+podSecurityContext:
+  runAsNonRoot: true
+  seccompProfile:
+    type: RuntimeDefault
+
+securityContext:
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: true
+  capabilities:
+    drop: ["ALL"]
+
+resources:
+  requests:
+    cpu: 50m
+    memory: 128Mi
+  limits:
+    memory: 512Mi
+
+podAnnotations: {}
+podLabels: {}
+nodeSelector: {}
+tolerations: []
+affinity: {}

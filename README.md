@@ -95,6 +95,19 @@ docker run --rm -p 8080:8080 -v ~/.kube:/kube:ro -e KUBECONFIG=/kube/config \
 
 When running in-cluster (e.g. as a Deployment for the dashboard), no kubeconfig is needed — the ServiceAccount token is picked up automatically.
 
+### Helm
+
+A chart lives in [`charts/cluster-guardian`](charts/cluster-guardian). It ships the read-only ClusterRole, health probes, a NetworkPolicy (on by default), and hardened pod defaults that pass cluster-guardian's own checks:
+
+```sh
+helm install cluster-guardian ./charts/cluster-guardian \
+  --namespace cluster-guardian --create-namespace \
+  --set persistence.enabled=true \      # keep trend history on a PVC
+  --set fleet.enabled=true              # multi-cluster scorecard mode
+```
+
+Key values: `prometheusUrl`, `ingress.*` (or `httpRoute.*` for Gateway API), `persistence.*`, `fleet.*`, `rbac.includeSecrets` (disable to run without cluster-wide Secret read access; the affected checks skip). See [values.yaml](charts/cluster-guardian/values.yaml) for the full list.
+
 ## Usage
 
 Analyze the cluster from your current kubeconfig context:
