@@ -27,6 +27,7 @@ func Namespaces(s *kube.Snapshot, names []string) []report.NamespaceSection {
 		findings = append(findings, probeFindings(s, ns)...)
 		findings = append(findings, availabilityFindings(s, ns)...)
 		findings = append(findings, disruptionFindings(s, ns)...)
+		findings = append(findings, unusedFindings(s, ns)...)
 		out = append(out, report.NamespaceSection{Name: ns, Findings: findings})
 	}
 	sort.Slice(out, func(i, j int) bool {

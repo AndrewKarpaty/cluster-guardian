@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	appsv1 "k8s.io/api/apps/v1"
+	autoscalingv2 "k8s.io/api/autoscaling/v2"
 	corev1 "k8s.io/api/core/v1"
 	networkingv1 "k8s.io/api/networking/v1"
 	policyv1 "k8s.io/api/policy/v1"
@@ -288,6 +289,102 @@ func TestDisruptionFindings(t *testing.T) {
 	}
 	if f != nil && strings.Contains(f.Message, "web") {
 		t.Errorf("web has spread constraints and must not be flagged: %q", f.Message)
+	}
+}
+
+func TestUnusedFindings(t *testing.T) {
+	meta := func(name string) metav1.ObjectMeta {
+		return metav1.ObjectMeta{Namespace: "payments", Name: name}
+	}
+	s := &kube.Snapshot{
+		Pods: []corev1.Pod{
+			pod("payments", "api-1", func(p *corev1.Pod) {
+				p.Labels = map[string]string{"app": "api"}
+				p.Spec.Volumes = []corev1.Volume{
+					{Name: "cfg", VolumeSource: corev1.VolumeSource{ConfigMap: &corev1.ConfigMapVolumeSource{
+						LocalObjectReference: corev1.LocalObjectReference{Name: "app-config"}}}},
+					{Name: "data", VolumeSource: corev1.VolumeSource{PersistentVolumeClaim: &corev1.PersistentVolumeClaimVolumeSource{
+						ClaimName: "data-pvc"}}},
+				}
+				p.Spec.Containers[0].EnvFrom = []corev1.EnvFromSource{
+					{SecretRef: &corev1.SecretEnvSource{LocalObjectReference: corev1.LocalObjectReference{Name: "app-secret"}}},
+				}
+			}),
+		},
+		ConfigMaps: []corev1.ConfigMap{
+			{ObjectMeta: meta("app-config")},       // referenced via volume
+			{ObjectMeta: meta("old-config")},       // unused
+			{ObjectMeta: meta("kube-root-ca.crt")}, // auto-generated, never flagged
+		},
+		Secrets: []corev1.Secret{
+			{ObjectMeta: meta("app-secret")},                                           // referenced via envFrom
+			{ObjectMeta: meta("stale-secret")},                                         // unused
+			{ObjectMeta: meta("sa-token"), Type: corev1.SecretTypeServiceAccountToken}, // generated
+		},
+		PVCs: []corev1.PersistentVolumeClaim{
+			{ObjectMeta: meta("data-pvc"), Status: corev1.PersistentVolumeClaimStatus{Phase: corev1.ClaimBound}},
+			{ObjectMeta: meta("orphan-pvc"), Status: corev1.PersistentVolumeClaimStatus{Phase: corev1.ClaimPending}},
+		},
+		Services: []corev1.Service{
+			{ObjectMeta: meta("api"), Spec: corev1.ServiceSpec{Selector: map[string]string{"app": "api"}}},
+			{ObjectMeta: meta("ghost"), Spec: corev1.ServiceSpec{Selector: map[string]string{"app": "ghost"}}},
+		},
+		Ingresses: []networkingv1.Ingress{{
+			ObjectMeta: meta("web"),
+			Spec: networkingv1.IngressSpec{Rules: []networkingv1.IngressRule{{
+				IngressRuleValue: networkingv1.IngressRuleValue{HTTP: &networkingv1.HTTPIngressRuleValue{
+					Paths: []networkingv1.HTTPIngressPath{{Backend: networkingv1.IngressBackend{
+						Service: &networkingv1.IngressServiceBackend{Name: "missing-svc"}}}},
+				}},
+			}}},
+		}},
+		HPAs: []autoscalingv2.HorizontalPodAutoscaler{{
+			ObjectMeta: meta("ghost-hpa"),
+			Spec: autoscalingv2.HorizontalPodAutoscalerSpec{
+				ScaleTargetRef: autoscalingv2.CrossVersionObjectReference{Kind: "Deployment", Name: "gone"},
+			},
+		}},
+		PDBs: []policyv1.PodDisruptionBudget{{
+			ObjectMeta: meta("empty-pdb"),
+			Spec: policyv1.PodDisruptionBudgetSpec{
+				Selector: &metav1.LabelSelector{MatchLabels: map[string]string{"app": "nobody"}},
+			},
+		}},
+	}
+
+	fs := unusedFindings(s, "payments")
+
+	cases := []struct{ substr, expect, reject string }{
+		{"unused ConfigMap", "old-config", "app-config"},
+		{"unused Secret", "stale-secret", "app-secret"},
+		{"not mounted", "orphan-pvc", "data-pvc"},
+		{"unbound PVC", "orphan-pvc", "data-pvc"},
+		{"no matching Pods", "ghost", "api"},
+		{"missing Service", "missing-svc", ""},
+		{"targeting", "ghost-hpa", ""},
+		{"selecting no Pods", "empty-pdb", ""},
+	}
+	for _, tc := range cases {
+		f := findMessage(fs, tc.substr)
+		if f == nil {
+			t.Errorf("expected a finding containing %q, got: %+v", tc.substr, messages(fs))
+			continue
+		}
+		if f.Severity != report.SeverityInfo {
+			t.Errorf("%q should be info severity, got %s", tc.substr, f.Severity)
+		}
+		if !strings.Contains(f.Message, tc.expect) {
+			t.Errorf("finding %q should mention %q", f.Message, tc.expect)
+		}
+		if tc.reject != "" && strings.Contains(f.Message, tc.reject) {
+			t.Errorf("finding %q must not mention %q", f.Message, tc.reject)
+		}
+	}
+	if f := findMessage(fs, "kube-root-ca"); f != nil {
+		t.Errorf("kube-root-ca.crt must never be flagged: %q", f.Message)
+	}
+	if f := findMessage(fs, "sa-token"); f != nil {
+		t.Errorf("service-account token secrets must never be flagged: %q", f.Message)
 	}
 }
 

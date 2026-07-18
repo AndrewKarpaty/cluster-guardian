@@ -51,6 +51,10 @@ type Snapshot struct {
 	PDBs                []policyv1.PodDisruptionBudget
 	Services            []corev1.Service
 	Ingresses           []networkingv1.Ingress
+	ConfigMaps          []corev1.ConfigMap
+	Secrets             []corev1.Secret // data is stripped after listing; only metadata and type are kept
+	PVCs                []corev1.PersistentVolumeClaim
+	ServiceAccounts     []corev1.ServiceAccount
 	NetworkPolicies     []networkingv1.NetworkPolicy
 	ClusterRoles        []rbacv1.ClusterRole
 	ClusterRoleBindings []rbacv1.ClusterRoleBinding
@@ -142,6 +146,23 @@ func (c *Client) Collect(ctx context.Context, namespaces []string) (*Snapshot, e
 	}
 	if v, err := c.Clientset.NetworkingV1().NetworkPolicies(metav1.NamespaceAll).List(ctx, opts); err == nil {
 		s.NetworkPolicies = v.Items
+	}
+	if v, err := c.Clientset.CoreV1().ConfigMaps(metav1.NamespaceAll).List(ctx, opts); err == nil {
+		s.ConfigMaps = v.Items
+	}
+	if v, err := c.Clientset.CoreV1().Secrets(metav1.NamespaceAll).List(ctx, opts); err == nil {
+		// Checks only need names and types; never hold secret payloads in memory.
+		for i := range v.Items {
+			v.Items[i].Data = nil
+			v.Items[i].StringData = nil
+		}
+		s.Secrets = v.Items
+	}
+	if v, err := c.Clientset.CoreV1().PersistentVolumeClaims(metav1.NamespaceAll).List(ctx, opts); err == nil {
+		s.PVCs = v.Items
+	}
+	if v, err := c.Clientset.CoreV1().ServiceAccounts(metav1.NamespaceAll).List(ctx, opts); err == nil {
+		s.ServiceAccounts = v.Items
 	}
 	if v, err := c.Clientset.RbacV1().ClusterRoles().List(ctx, opts); err == nil {
 		s.ClusterRoles = v.Items
