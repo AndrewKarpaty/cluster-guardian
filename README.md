@@ -49,6 +49,7 @@ Cluster Guardian is an open-source tool that analyzes Kubernetes clusters and pr
 * PodDisruptionBudget coverage and topology spread validation
 * Unused resource detection (ConfigMaps, Secrets, PVCs, Services without pods, dangling Ingress/HPA/PDB targets)
 * TLS certificate checks (Ingress certificates near expiry, missing TLS secrets, cert-manager Certificate readiness)
+* Deprecated API detection (kubent-style, severity based on the cluster's version)
 * Security checks (root containers, privileged pods, dangerous capabilities, host namespaces, RBAC, Network Policies)
 * Pod Security Standards compliance summary (`--framework pss` shows only PSS-mapped findings)
 * Monitoring validation (Prometheus, Alertmanager, ServiceMonitors, PodMonitors, PrometheusRules)
@@ -165,6 +166,7 @@ cluster-guardian analyze --fail-on warning    # exit code 2 on warnings or worse
 | Monitoring   | Prometheus/Alertmanager presence, ServiceMonitor scrape coverage, missing alerts for Redis, PostgreSQL, Kafka, and other stateful services |
 | Hygiene      | Unused ConfigMaps and Secrets, unmounted or unbound PVCs, Services matching no pods, Ingress paths to missing Services, HPAs targeting missing workloads, PDBs selecting nothing |
 | Certificates | Ingress TLS certificates expiring within 30 days (critical under 7), Ingresses referencing missing TLS secrets, cert-manager Certificates not Ready |
+| Deprecations | Objects still written with deprecated API versions (from managedFields / last-applied), critical when the API is removed in the next minor version or earlier |
 | GitOps       | Argo CD Application health and sync status, Flux Kustomization/HelmRelease readiness                 |
 | Optimization | CPU and memory overprovisioning, estimated from requests vs. actual usage in Prometheus              |
 

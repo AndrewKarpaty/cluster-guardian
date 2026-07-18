@@ -13,6 +13,7 @@ import (
 
 	appsv1 "k8s.io/api/apps/v1"
 	autoscalingv2 "k8s.io/api/autoscaling/v2"
+	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
 	networkingv1 "k8s.io/api/networking/v1"
 	policyv1 "k8s.io/api/policy/v1"
@@ -481,6 +482,62 @@ func TestCertificates(t *testing.T) {
 	}
 	if fs := certificates(noAccess, []string{"payments"}, now).Findings; len(fs) != 0 {
 		t.Errorf("expected no findings without secret access, got: %+v", messages(fs))
+	}
+}
+
+func TestDeprecations(t *testing.T) {
+	managed := func(api string) []metav1.ManagedFieldsEntry {
+		return []metav1.ManagedFieldsEntry{{Manager: "helm", APIVersion: api}}
+	}
+	s := &kube.Snapshot{
+		ClusterVersion: "v1.24.9+eks",
+		CronJobs: []batchv1.CronJob{{
+			ObjectMeta: metav1.ObjectMeta{
+				Namespace: "payments", Name: "report",
+				Annotations: map[string]string{
+					"kubectl.kubernetes.io/last-applied-configuration": `{"apiVersion":"batch/v1beta1","kind":"CronJob"}`,
+				},
+			},
+		}},
+		HPAs: []autoscalingv2.HorizontalPodAutoscaler{{
+			ObjectMeta: metav1.ObjectMeta{
+				Namespace: "payments", Name: "api-hpa",
+				ManagedFields: managed("autoscaling/v2beta2"),
+			},
+		}},
+		Ingresses: []networkingv1.Ingress{{
+			ObjectMeta: metav1.ObjectMeta{
+				Namespace: "payments", Name: "web",
+				ManagedFields: managed("networking.k8s.io/v1beta1"),
+			},
+		}},
+		Deployments: []appsv1.Deployment{{
+			ObjectMeta: metav1.ObjectMeta{
+				Namespace: "payments", Name: "api",
+				ManagedFields: managed("apps/v1"), // current version: no finding
+			},
+		}},
+	}
+
+	fs := Deprecations(s, []string{"payments"}).Findings
+
+	// batch/v1beta1 is removed in 1.25 = next minor after 1.24 -> critical.
+	if f := findMessage(fs, "batch/v1beta1"); f == nil || f.Severity != report.SeverityCritical || !strings.Contains(f.Message, "removed in 1.25") {
+		t.Errorf("expected critical removed-in-1.25 for batch/v1beta1, got: %+v", messages(fs))
+	}
+	// autoscaling/v2beta2 is removed in 1.26, two minors away -> warning.
+	if f := findMessage(fs, "autoscaling/v2beta2"); f == nil || f.Severity != report.SeverityWarning || !strings.Contains(f.Message, "deprecated since 1.23") {
+		t.Errorf("expected deprecation warning for autoscaling/v2beta2, got: %+v", messages(fs))
+	}
+	// networking.k8s.io/v1beta1 Ingress was removed in 1.22, already gone -> critical.
+	if f := findMessage(fs, "networking.k8s.io/v1beta1"); f == nil || f.Severity != report.SeverityCritical || !strings.Contains(f.Message, "removed since 1.22") {
+		t.Errorf("expected critical removed-since for v1beta1 Ingress, got: %+v", messages(fs))
+	}
+	if f := findMessage(fs, "apps/v1,"); f != nil {
+		t.Errorf("current API versions must not be flagged: %q", f.Message)
+	}
+	if len(fs) != 3 {
+		t.Errorf("expected exactly 3 findings, got %d: %+v", len(fs), messages(fs))
 	}
 }
 

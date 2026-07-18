@@ -13,6 +13,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Unused and orphaned resource detection: unused ConfigMaps/Secrets (with auto-generated ones excluded), unmounted and unbound PVCs, Services matching no pods, Ingress paths routing to missing Services, HPAs targeting missing workloads, and PDBs selecting nothing (#29). Secret contents are stripped at collection time; only names and types are kept.
 - Certificates section: Ingress TLS certificates expiring within 30 days (critical under 7 days or already expired), Ingresses referencing missing TLS secrets, and cert-manager Certificate resources that are not Ready, detected via the optional-CRD pattern (#22). Only the public `tls.crt` of TLS secrets is retained in memory.
 - Dashboard UX: severity and namespace filters, free-text search, collapsible sections with critical/warning counts in headers, an auto-refresh toggle (uses `?refresh=true`), and JSON/Markdown download buttons (#18). Filters and search also work in exported HTML reports; the live controls appear only in serve mode.
+- Deprecated APIs section: objects still written with deprecated API versions, recovered from managedFields and the last-applied-configuration annotation. Warning when deprecated, critical when the API is removed in the cluster's next minor version or already gone (#15).
 
 ### Changed
 
