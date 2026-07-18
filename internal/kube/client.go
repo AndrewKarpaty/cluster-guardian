@@ -18,6 +18,8 @@ type Client struct {
 	Clientset kubernetes.Interface
 	Dynamic   dynamic.Interface
 	Context   string
+	// Server is the API server URL the client talks to.
+	Server string
 }
 
 // NewClient builds clients from --kubeconfig/--context, falling back to
@@ -38,7 +40,7 @@ func NewClient(kubeconfig, context string) (*Client, error) {
 	if err != nil {
 		return nil, fmt.Errorf("creating dynamic client: %w", err)
 	}
-	return &Client{Clientset: clientset, Dynamic: dyn, Context: usedContext}, nil
+	return &Client{Clientset: clientset, Dynamic: dyn, Context: usedContext, Server: cfg.Host}, nil
 }
 
 // NewClientForCluster builds clients for a remote cluster from explicit
@@ -59,7 +61,7 @@ func NewClientForCluster(name, server, bearerToken string, caData []byte, insecu
 	if err != nil {
 		return nil, fmt.Errorf("creating dynamic client for %s: %w", name, err)
 	}
-	return &Client{Clientset: clientset, Dynamic: dyn, Context: name}, nil
+	return &Client{Clientset: clientset, Dynamic: dyn, Context: name, Server: server}, nil
 }
 
 func buildConfig(kubeconfig, context string) (*rest.Config, string, error) {

@@ -184,9 +184,22 @@ and an A–F grade:
 cluster-guardian serve --fleet --fleet-interval 5m --history-dir /data
 ```
 
-Clusters are registered declaratively: create a Secret in the tool's
-namespace labeled `cluster-guardian.io/secret-type: cluster` with `name`,
-`server`, and a `config` JSON holding a bearer token for a read-only
+The `cluster add` helper registers a cluster in one step — it provisions a
+read-only ServiceAccount (with a ClusterRole scoped to exactly the resources
+cluster-guardian reads) and a long-lived token on the target cluster, then
+stores the connection details on the hub:
+
+```sh
+cluster-guardian cluster add prod --remote-context prod-admin
+```
+
+Re-running it refreshes the ClusterRole rules and rotates the stored
+credentials. Use `--server` when the kubeconfig URL is not reachable from
+inside the hub cluster.
+
+Alternatively, register clusters declaratively: create a Secret in the
+tool's namespace labeled `cluster-guardian.io/secret-type: cluster` with
+`name`, `server`, and a `config` JSON holding a bearer token for a read-only
 ServiceAccount on the target cluster:
 
 ```yaml
