@@ -39,6 +39,22 @@ func TestFinalizeAndMaxSeverity(t *testing.T) {
 	}
 }
 
+func TestFilterControls(t *testing.T) {
+	r := sampleReport()
+	r.Sections[0].Findings[0].Controls = []string{"PSS/restricted:run-as-nonroot"}
+	r.FilterControls("pss/")
+
+	if got := len(r.Sections[0].Findings); got != 1 {
+		t.Fatalf("expected 1 tagged security finding to survive, got %d", got)
+	}
+	if got := len(r.Namespaces[0].Findings); got != 0 {
+		t.Errorf("untagged namespace findings should be filtered out, got %d", got)
+	}
+	if r.Summary.Total != 1 || r.Summary.Critical != 0 {
+		t.Errorf("summary not recomputed after filtering: %+v", r.Summary)
+	}
+}
+
 func TestWriteTerminal(t *testing.T) {
 	var buf bytes.Buffer
 	WriteTerminal(&buf, sampleReport(), TerminalOptions{NoColor: true, Verbose: true})

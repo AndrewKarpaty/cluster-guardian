@@ -57,6 +57,7 @@ func Security(s *kube.Snapshot, namespaces []string) report.Section {
 			Severity: report.SeverityWarning,
 			Message:  fmt.Sprintf("%d %s running as root", rootContainers, plural(rootContainers, "container", "containers")),
 			Hint:     "Set securityContext.runAsNonRoot: true and a non-zero runAsUser.",
+			Controls: []string{ctrlRunAsNonRoot},
 		})
 	}
 	if privileged > 0 {
@@ -64,18 +65,21 @@ func Security(s *kube.Snapshot, namespaces []string) report.Section {
 			Severity: report.SeverityCritical,
 			Message:  fmt.Sprintf("%d privileged %s", privileged, plural(privileged, "container", "containers")),
 			Hint:     "Privileged containers have full access to the host. Replace with specific capabilities.",
+			Controls: []string{ctrlPrivileged},
 		})
 	}
 	if dangerousCaps > 0 {
 		sec.Findings = append(sec.Findings, report.Finding{
 			Severity: report.SeverityWarning,
 			Message:  fmt.Sprintf("%d %s with dangerous capabilities (SYS_ADMIN, NET_ADMIN, ...)", dangerousCaps, plural(dangerousCaps, "container", "containers")),
+			Controls: []string{ctrlCapabilities},
 		})
 	}
 	if hostNetwork > 0 {
 		sec.Findings = append(sec.Findings, report.Finding{
 			Severity: report.SeverityWarning,
 			Message:  fmt.Sprintf("%d %s using host network/PID/IPC", hostNetwork, plural(hostNetwork, "Pod", "Pods")),
+			Controls: []string{ctrlHostNamespaces},
 		})
 	}
 
@@ -99,6 +103,7 @@ func Security(s *kube.Snapshot, namespaces []string) report.Section {
 	}
 
 	sec.Findings = append(sec.Findings, rbacFindings(s)...)
+	sec.Findings = append(sec.Findings, complianceSummary(sec.Findings))
 	return sec
 }
 

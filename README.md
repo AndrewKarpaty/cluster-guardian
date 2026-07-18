@@ -48,6 +48,7 @@ Cluster Guardian is an open-source tool that analyzes Kubernetes clusters and pr
 * Readiness, Liveness, and Startup Probe validation
 * PodDisruptionBudget coverage and topology spread validation
 * Security checks (root containers, privileged pods, dangerous capabilities, host namespaces, RBAC, Network Policies)
+* Pod Security Standards compliance summary (`--framework pss` shows only PSS-mapped findings)
 * Monitoring validation (Prometheus, Alertmanager, ServiceMonitors, PodMonitors, PrometheusRules)
 * Argo CD / Flux health integration
 * Cost optimization recommendations
@@ -154,7 +155,7 @@ cluster-guardian analyze --fail-on warning    # exit code 2 on warnings or worse
 |--------------|-----------------------------------------------------------------------------------------------------|
 | Workloads    | Missing resource requests/limits, `:latest` tags, missing probes, single replicas, missing HPAs, missing or drain-blocking PodDisruptionBudgets, missing topology spread |
 | Health       | CrashLoopBackOff, ImagePullBackOff, Pending pods, OOMKilled containers, restart storms               |
-| Security     | Root/privileged containers, dangerous capabilities, host network/PID/IPC, namespaces without NetworkPolicies, wildcard ClusterRoles, cluster-admin ServiceAccounts |
+| Security     | Root/privileged containers, dangerous capabilities, host network/PID/IPC, namespaces without NetworkPolicies, wildcard ClusterRoles, cluster-admin ServiceAccounts; findings are tagged with Pod Security Standards controls and summarized per framework |
 | Monitoring   | Prometheus/Alertmanager presence, ServiceMonitor scrape coverage, missing alerts for Redis, PostgreSQL, Kafka, and other stateful services |
 | GitOps       | Argo CD Application health and sync status, Flux Kustomization/HelmRelease readiness                 |
 | Optimization | CPU and memory overprovisioning, estimated from requests vs. actual usage in Prometheus              |

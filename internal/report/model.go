@@ -5,6 +5,7 @@ package report
 import (
 	"encoding/json"
 	"fmt"
+	"strings"
 	"time"
 )
 
@@ -65,6 +66,9 @@ type Finding struct {
 	Message  string   `json:"message"`
 	Object   string   `json:"object,omitempty"`
 	Hint     string   `json:"hint,omitempty"`
+	// Controls lists compliance-framework controls this finding maps to,
+	// e.g. "PSS/baseline:privileged".
+	Controls []string `json:"controls,omitempty"`
 }
 
 // Section groups findings under a topic (Security, Monitoring, ...).
@@ -146,6 +150,31 @@ func (r *Report) MaxSeverity() Severity {
 		}
 	}
 	return highest
+}
+
+// FilterControls keeps only findings tagged with a compliance control whose
+// ID starts with prefix (case-insensitive) and recomputes the summary.
+func (r *Report) FilterControls(prefix string) {
+	prefix = strings.ToLower(prefix)
+	match := func(fs []Finding) []Finding {
+		var out []Finding
+		for _, f := range fs {
+			for _, c := range f.Controls {
+				if strings.HasPrefix(strings.ToLower(c), prefix) {
+					out = append(out, f)
+					break
+				}
+			}
+		}
+		return out
+	}
+	for i := range r.Sections {
+		r.Sections[i].Findings = match(r.Sections[i].Findings)
+	}
+	for i := range r.Namespaces {
+		r.Namespaces[i].Findings = match(r.Namespaces[i].Findings)
+	}
+	r.Finalize()
 }
 
 func maxSeverity(fs []Finding) Severity {

@@ -175,6 +175,21 @@ func TestSecurity(t *testing.T) {
 	if f := findMessage(fs, "cluster-admin"); f == nil || !strings.Contains(f.Message, "payments/app-sa") {
 		t.Errorf("expected cluster-admin ServiceAccount finding, got: %+v", messages(fs))
 	}
+
+	// PSS mapping: privileged and run-as-root fail, host namespaces and
+	// capabilities pass -> 2 of 4.
+	if f := findMessage(fs, "privileged"); f == nil || len(f.Controls) == 0 || f.Controls[0] != "PSS/baseline:privileged" {
+		t.Errorf("privileged finding should be tagged with its PSS control, got: %+v", f)
+	}
+	f := findMessage(fs, "Pod Security Standards")
+	if f == nil {
+		t.Fatalf("expected a PSS compliance summary, got: %+v", messages(fs))
+	}
+	if !strings.Contains(f.Message, "2 of 4") ||
+		!strings.Contains(f.Message, "Privileged Containers") ||
+		!strings.Contains(f.Message, "Running as Non-root") {
+		t.Errorf("unexpected PSS summary: %q", f.Message)
+	}
 }
 
 func TestMonitoringMissingAlerts(t *testing.T) {

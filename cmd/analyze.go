@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/spf13/cobra"
@@ -20,6 +21,7 @@ var (
 	flagFailOn     string
 	flagVerbose    bool
 	flagNoColor    bool
+	flagFramework  string
 )
 
 // failError carries the exit code for --fail-on threshold violations, so CI
@@ -40,6 +42,9 @@ var analyzeCmd = &cobra.Command{
 	Use:   "analyze",
 	Short: "Analyze the cluster and print a report",
 	RunE: func(cmd *cobra.Command, _ []string) error {
+		if flagFramework != "" && !strings.EqualFold(flagFramework, "pss") {
+			return fmt.Errorf("unknown --framework %q (supported: pss)", flagFramework)
+		}
 		client, err := newKubeClient()
 		if err != nil {
 			return err
@@ -50,6 +55,9 @@ var analyzeCmd = &cobra.Command{
 		r, err := analyzer.Run(ctx, client, analyzerOptions())
 		if err != nil {
 			return err
+		}
+		if flagFramework != "" {
+			r.FilterControls(flagFramework + "/")
 		}
 
 		out := cmd.OutOrStdout()
@@ -116,6 +124,7 @@ func init() {
 		f.StringVarP(&flagOutput, "output", "o", "terminal", "output format: terminal, json, markdown, html")
 		f.StringVar(&flagOutputFile, "output-file", "", "write the report to a file instead of stdout")
 		f.StringVar(&flagFailOn, "fail-on", "none", "exit non-zero if findings reach this severity: none, warning, critical")
+		f.StringVar(&flagFramework, "framework", "", "only show findings mapped to a compliance framework: pss")
 		f.BoolVarP(&flagVerbose, "verbose", "v", false, "show remediation hints for each finding")
 		f.BoolVar(&flagNoColor, "no-color", false, "disable colored output")
 	}
