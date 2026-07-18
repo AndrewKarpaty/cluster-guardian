@@ -3,6 +3,7 @@ package server
 
 import (
 	"context"
+	"encoding/json"
 	"io"
 	"log"
 	"net/http"
@@ -10,6 +11,8 @@ import (
 	"time"
 
 	"github.com/AndrewKarpaty/cluster-guardian/internal/analyzer"
+	"github.com/AndrewKarpaty/cluster-guardian/internal/fleet"
+	"github.com/AndrewKarpaty/cluster-guardian/internal/history"
 	"github.com/AndrewKarpaty/cluster-guardian/internal/kube"
 	"github.com/AndrewKarpaty/cluster-guardian/internal/report"
 )
@@ -17,19 +20,27 @@ import (
 // Server serves the dashboard and REST API. Reports are cached briefly so a
 // busy dashboard doesn't hammer the API server.
 type Server struct {
-	client *kube.Client
-	opts   analyzer.Options
-	ttl    time.Duration
+	client  *kube.Client
+	opts    analyzer.Options
+	ttl     time.Duration
+	history *history.Store
+	fleet   *fleet.Manager
 
 	mu       sync.Mutex
 	cached   *report.Report
 	cachedAt time.Time
 }
 
-// New returns a Server that analyzes via client and caches reports for cacheTTL.
-func New(client *kube.Client, opts analyzer.Options, cacheTTL time.Duration) *Server {
-	return &Server{client: client, opts: opts, ttl: cacheTTL}
+// New returns a Server that analyzes via client, caches reports for cacheTTL,
+// and records each fresh analysis in hist (may be nil to disable history).
+func New(client *kube.Client, opts analyzer.Options, cacheTTL time.Duration, hist *history.Store) *Server {
+	return &Server{client: client, opts: opts, ttl: cacheTTL, history: hist}
 }
+
+// EnableFleet switches the server into fleet mode: the root page becomes the
+// fleet overview and per-cluster routes are served from m. Call before
+// Handler / ListenAndServe.
+func (s *Server) EnableFleet(m *fleet.Manager) { s.fleet = m }
 
 // Handler returns the HTTP routes for the dashboard, REST API and health probe.
 func (s *Server) Handler() http.Handler {
@@ -40,7 +51,19 @@ func (s *Server) Handler() http.Handler {
 	})
 	mux.HandleFunc("GET /api/report", s.handleReport(report.WriteJSON, "application/json"))
 	mux.HandleFunc("GET /api/report/markdown", s.handleReport(report.WriteMarkdown, "text/markdown; charset=utf-8"))
-	mux.HandleFunc("GET /{$}", s.handleReport(report.WriteDashboard, "text/html; charset=utf-8"))
+	mux.HandleFunc("GET /api/history", s.handleHistory)
+	mux.HandleFunc("GET /api/history/diff", s.handleHistoryDiff)
+	if s.fleet != nil {
+		mux.HandleFunc("GET /{$}", s.handleFleetPage)
+		mux.HandleFunc("GET /clusters/{name}", s.handleClusterDashboard)
+		mux.HandleFunc("GET /api/clusters", s.handleClusters)
+		mux.HandleFunc("GET /api/clusters/{name}/report", s.handleClusterReport(report.WriteJSON, "application/json"))
+		mux.HandleFunc("GET /api/clusters/{name}/report/markdown", s.handleClusterReport(report.WriteMarkdown, "text/markdown; charset=utf-8"))
+		mux.HandleFunc("GET /api/clusters/{name}/history", s.handleClusterHistory)
+		mux.HandleFunc("GET /api/clusters/{name}/history/diff", s.handleClusterHistoryDiff)
+	} else {
+		mux.HandleFunc("GET /{$}", s.handleReport(report.WriteDashboard, "text/html; charset=utf-8"))
+	}
 	return mux
 }
 
@@ -82,5 +105,33 @@ func (s *Server) report(ctx context.Context, forceRefresh bool) (*report.Report,
 		return nil, err
 	}
 	s.cached, s.cachedAt = r, time.Now()
+	if s.history != nil {
+		s.history.Append(r)
+	}
 	return r, nil
+}
+
+func (s *Server) handleHistory(w http.ResponseWriter, _ *http.Request) {
+	var entries []history.Entry
+	if s.history != nil {
+		entries = s.history.Entries()
+	}
+	writeJSON(w, map[string]any{"entries": entries})
+}
+
+func (s *Server) handleHistoryDiff(w http.ResponseWriter, _ *http.Request) {
+	d := &report.DiffResult{}
+	if s.history != nil {
+		if last := s.history.LastDiff(); last != nil {
+			d = last
+		}
+	}
+	writeJSON(w, d)
+}
+
+func writeJSON(w http.ResponseWriter, v any) {
+	w.Header().Set("Content-Type", "application/json")
+	if err := json.NewEncoder(w).Encode(v); err != nil {
+		log.Printf("encoding response: %v", err)
+	}
 }

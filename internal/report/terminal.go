@@ -49,6 +49,7 @@ func WriteTerminal(w io.Writer, r *Report, opts TerminalOptions) {
 	if r.KubernetesVersion != "" {
 		meta = append(meta, "Kubernetes "+r.KubernetesVersion)
 	}
+	meta = append(meta, fmt.Sprintf("score %d/100 (%s)", r.Summary.Score, r.Summary.Grade))
 	meta = append(meta, fmt.Sprintf("%d namespaces analyzed", r.Summary.Namespaces))
 	if r.Summary.Critical > 0 || r.Summary.Warnings > 0 {
 		meta = append(meta, fmt.Sprintf("%d warnings, %d critical", r.Summary.Warnings, r.Summary.Critical))

@@ -39,6 +39,27 @@ func TestFinalizeAndMaxSeverity(t *testing.T) {
 	}
 }
 
+func TestScoreAndGrade(t *testing.T) {
+	// sampleReport: 1 critical + 2 warnings -> 100 - 15 - 8 = 77 -> C.
+	r := sampleReport()
+	if r.Summary.Score != 77 || r.Summary.Grade != "C" {
+		t.Errorf("expected score 77 grade C, got %d %s", r.Summary.Score, r.Summary.Grade)
+	}
+	clean := &Report{}
+	clean.Finalize()
+	if clean.Summary.Score != 100 || clean.Summary.Grade != "A" {
+		t.Errorf("empty report should score 100/A, got %d %s", clean.Summary.Score, clean.Summary.Grade)
+	}
+	for score, want := range map[int]string{95: "A", 85: "B", 75: "C", 65: "D", 30: "F", 0: "F"} {
+		if got := GradeOf(score); got != want {
+			t.Errorf("GradeOf(%d) = %s, want %s", score, got, want)
+		}
+	}
+	if g := (Section{Findings: []Finding{{Severity: SeverityCritical}}}).Grade(); g != "B" {
+		t.Errorf("section with 1 critical should grade B (score 85), got %s", g)
+	}
+}
+
 func TestFilterControls(t *testing.T) {
 	r := sampleReport()
 	r.Sections[0].Findings[0].Controls = []string{"PSS/restricted:run-as-nonroot"}
@@ -98,6 +119,30 @@ func TestWriteHTMLEscapes(t *testing.T) {
 	}
 	if strings.Contains(buf.String(), "<script>alert(1)</script>") {
 		t.Error("HTML output must escape finding messages")
+	}
+}
+
+func TestDiff(t *testing.T) {
+	older := sampleReport()
+	newer := sampleReport()
+	// Count-only change: must NOT count as new or resolved.
+	newer.Namespaces[0].Findings[0].Message = "3 Pods missing resource requests"
+	// CrashLoopBackOff finding gone: resolved.
+	newer.Namespaces[0].Findings = newer.Namespaces[0].Findings[:1]
+	// Fresh finding in the Security section: new.
+	newer.Sections[0].Findings = append(newer.Sections[0].Findings,
+		Finding{Severity: SeverityWarning, Message: "2 privileged containers"})
+
+	d := Diff(older, newer)
+
+	if len(d.New) != 1 || !strings.Contains(d.New[0].Message, "privileged") {
+		t.Errorf("expected exactly the privileged finding as new, got: %+v", d.New)
+	}
+	if len(d.New) == 1 && d.New[0].Location != "Security" {
+		t.Errorf("expected Security location, got %q", d.New[0].Location)
+	}
+	if len(d.Resolved) != 1 || !strings.Contains(d.Resolved[0].Message, "CrashLoopBackOff") {
+		t.Errorf("expected exactly the CrashLoopBackOff finding as resolved, got: %+v", d.Resolved)
 	}
 }
 

@@ -1,16 +1,26 @@
 package cmd
 
 import (
+	"context"
+	"os"
+	"strings"
 	"time"
 
 	"github.com/spf13/cobra"
 
+	"github.com/AndrewKarpaty/cluster-guardian/internal/fleet"
+	"github.com/AndrewKarpaty/cluster-guardian/internal/history"
 	"github.com/AndrewKarpaty/cluster-guardian/internal/server"
 )
 
 var (
-	flagListen   string
-	flagCacheTTL time.Duration
+	flagListen        string
+	flagCacheTTL      time.Duration
+	flagHistoryDir    string
+	flagHistoryLimit  int
+	flagFleet         bool
+	flagFleetInterval time.Duration
+	flagFleetNS       string
 )
 
 var serveCmd = &cobra.Command{
@@ -27,7 +37,21 @@ var serveCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
-		srv := server.New(client, analyzerOptions(), flagCacheTTL)
+		hist, err := history.New(flagHistoryDir, flagHistoryLimit)
+		if err != nil {
+			return err
+		}
+		srv := server.New(client, analyzerOptions(), flagCacheTTL, hist)
+		if flagFleet {
+			reg := &fleet.Registry{
+				Local:     client,
+				Clientset: client.Clientset,
+				Namespace: fleetNamespace(),
+			}
+			mgr := fleet.NewManager(reg, analyzerOptions(), flagFleetInterval, flagHistoryDir, flagHistoryLimit)
+			srv.EnableFleet(mgr)
+			go mgr.Run(context.Background())
+		}
 		return srv.ListenAndServe(flagListen)
 	},
 }
@@ -35,5 +59,24 @@ var serveCmd = &cobra.Command{
 func init() {
 	serveCmd.Flags().StringVar(&flagListen, "listen", "127.0.0.1:8080", "address to listen on")
 	serveCmd.Flags().DurationVar(&flagCacheTTL, "cache-ttl", 60*time.Second, "how long to cache analysis results")
+	serveCmd.Flags().StringVar(&flagHistoryDir, "history-dir", "", "directory to persist reports for trend history (empty = in-memory only)")
+	serveCmd.Flags().IntVar(&flagHistoryLimit, "history-limit", 100, "maximum runs to keep in history")
+	serveCmd.Flags().BoolVar(&flagFleet, "fleet", false, "fleet mode: scan clusters registered via labeled Secrets and serve the fleet scorecard")
+	serveCmd.Flags().DurationVar(&flagFleetInterval, "fleet-interval", 5*time.Minute, "how often to scan registered clusters in fleet mode")
+	serveCmd.Flags().StringVar(&flagFleetNS, "fleet-namespace", "", "namespace holding cluster secrets (default: the pod's own namespace)")
 	rootCmd.AddCommand(serveCmd)
+}
+
+// fleetNamespace resolves where cluster secrets live: the flag, the pod's own
+// namespace when running in-cluster, or "default".
+func fleetNamespace() string {
+	if flagFleetNS != "" {
+		return flagFleetNS
+	}
+	if data, err := os.ReadFile("/var/run/secrets/kubernetes.io/serviceaccount/namespace"); err == nil {
+		if ns := strings.TrimSpace(string(data)); ns != "" {
+			return ns
+		}
+	}
+	return "default"
 }

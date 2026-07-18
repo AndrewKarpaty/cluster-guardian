@@ -1,0 +1,29 @@
+<svg width="512" height="512" viewBox="0 0 512 512" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Cluster Guardian logo">
+  <defs>
+    <linearGradient id="shield" x1="68" y1="40" x2="444" y2="472" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#2563EB"/>
+      <stop offset="1" stop-color="#0EA5E9"/>
+    </linearGradient>
+  </defs>
+  <!-- shield -->
+  <path d="M256 40 L444 110 V268 C444 375 366 442 256 472 C146 442 68 375 68 268 V110 Z" fill="url(#shield)"/>
+  <!-- inner outline -->
+  <path d="M256 78 L410 136 V262 C410 350 344 408 256 434 C168 408 102 350 102 262 V136 Z"
+        stroke="#FFFFFF" stroke-opacity="0.22" stroke-width="10" fill="none"/>
+  <!-- cluster links -->
+  <g stroke="#FFFFFF" stroke-opacity="0.85" stroke-width="14" stroke-linecap="round">
+    <path d="M256 250 L256 150"/>
+    <path d="M256 250 L170 316"/>
+    <path d="M256 250 L342 316"/>
+  </g>
+  <!-- satellite nodes -->
+  <g fill="#FFFFFF" fill-opacity="0.95">
+    <circle cx="256" cy="142" r="24"/>
+    <circle cx="164" cy="322" r="24"/>
+    <circle cx="348" cy="322" r="24"/>
+  </g>
+  <!-- central node with check -->
+  <circle cx="256" cy="250" r="42" fill="#FFFFFF"/>
+  <path d="M238 251 L252 265 L278 235" stroke="url(#shield)" stroke-width="14"
+        stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+</svg>

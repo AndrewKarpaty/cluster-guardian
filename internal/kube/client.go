@@ -41,6 +41,27 @@ func NewClient(kubeconfig, context string) (*Client, error) {
 	return &Client{Clientset: clientset, Dynamic: dyn, Context: usedContext}, nil
 }
 
+// NewClientForCluster builds clients for a remote cluster from explicit
+// connection details, as stored in fleet cluster secrets.
+func NewClientForCluster(name, server, bearerToken string, caData []byte, insecure bool) (*Client, error) {
+	cfg := &rest.Config{
+		Host:            server,
+		BearerToken:     bearerToken,
+		TLSClientConfig: rest.TLSClientConfig{Insecure: insecure, CAData: caData},
+	}
+	cfg.QPS = 50
+	cfg.Burst = 100
+	clientset, err := kubernetes.NewForConfig(cfg)
+	if err != nil {
+		return nil, fmt.Errorf("creating clientset for %s: %w", name, err)
+	}
+	dyn, err := dynamic.NewForConfig(cfg)
+	if err != nil {
+		return nil, fmt.Errorf("creating dynamic client for %s: %w", name, err)
+	}
+	return &Client{Clientset: clientset, Dynamic: dyn, Context: name}, nil
+}
+
 func buildConfig(kubeconfig, context string) (*rest.Config, string, error) {
 	rules := clientcmd.NewDefaultClientConfigLoadingRules()
 	if kubeconfig != "" {

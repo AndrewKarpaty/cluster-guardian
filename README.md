@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="assets/logo.svg" alt="Cluster Guardian logo" width="140">
+</p>
+
 # Cluster Guardian
 
 [![Build Status][actions-badge]][actions-url]
@@ -56,6 +60,8 @@ Cluster Guardian is an open-source tool that analyzes Kubernetes clusters and pr
 * Argo CD / Flux health integration
 * Cost optimization recommendations
 * Automatic cluster documentation generation
+* Cluster health score (0–100) and A–F grades, with `--fail-below` gating
+* Fleet mode: hosted multi-cluster scorecard with declarative, Secret-based cluster registration
 * Export reports in JSON, Markdown, and HTML
 * REST API and Web Dashboard
 * CLI for automation and CI/CD integration
@@ -140,12 +146,62 @@ The dashboard supports filtering by severity and namespace, free-text search,
 collapsible sections, an auto-refresh toggle, and JSON/Markdown download
 buttons. Filtering and search also work in `-o html` file exports.
 
+Each analysis run is recorded in a history, powering a trend chart (findings
+by severity over time) and a "since previous run: N new, M resolved" diff in
+the dashboard. Pass `--history-dir /path` to persist history across restarts
+(use a PVC when running in-cluster); without it history is in-memory only.
+`--history-limit` caps the number of retained runs (default 100).
+
 | Endpoint                   | Description                                      |
 |----------------------------|--------------------------------------------------|
 | `GET /`                    | Web dashboard (HTML report)                      |
 | `GET /api/report`          | Report as JSON (`?refresh=true` bypasses cache)  |
 | `GET /api/report/markdown` | Report as Markdown                               |
+| `GET /api/history`         | History index: time + severity counts per run    |
+| `GET /api/history/diff`    | New and resolved findings vs the previous run    |
 | `GET /healthz`             | Liveness probe                                   |
+
+### Fleet mode: hosted multi-cluster scorecard
+
+Run cluster-guardian in a cluster and let it scan your whole fleet on a
+schedule, SecurityScorecard-style — every cluster gets a 0–100 health score
+and an A–F grade:
+
+```sh
+cluster-guardian serve --fleet --fleet-interval 5m --history-dir /data
+```
+
+Clusters are registered declaratively: create a Secret in the tool's
+namespace labeled `cluster-guardian.io/secret-type: cluster` with `name`,
+`server`, and a `config` JSON holding a bearer token for a read-only
+ServiceAccount on the target cluster:
+
+```yaml
+apiVersion: v1
+kind: Secret
+metadata:
+  name: cluster-prod
+  labels:
+    cluster-guardian.io/secret-type: cluster
+stringData:
+  name: prod
+  server: https://prod.example.com:6443
+  config: |
+    {"bearerToken": "<token>", "tlsClientConfig": {"caData": "<base64 CA>"}}
+```
+
+The local cluster is always included automatically.
+
+The root page becomes the fleet overview (grade, score, and top counts per
+cluster); each card links to that cluster's full dashboard with its own
+trends. Per-cluster API routes: `/api/clusters`,
+`/api/clusters/{name}/report`, `/api/clusters/{name}/history` (+`/diff`).
+
+One unreachable cluster never stalls the rest: scans run concurrently with a
+per-cluster timeout, and failures surface on the cluster's card. **Security
+note:** a fleet instance holds credentials for every registered cluster —
+restrict its namespace with RBAC and NetworkPolicies, and grant target
+ServiceAccounts only view-level access.
 
 ### CI/CD integration
 
@@ -154,7 +210,11 @@ Use `--fail-on` to gate pipelines on findings:
 ```sh
 cluster-guardian analyze --fail-on critical   # exit code 3 on critical findings
 cluster-guardian analyze --fail-on warning    # exit code 2 on warnings or worse
+cluster-guardian analyze --fail-below 80      # exit code 2 if the health score drops below 80
 ```
+
+Every report carries a 0–100 health score and A–F grade (severity-weighted),
+shown in the terminal header, dashboard, and JSON `summary`.
 
 ## Checks
 

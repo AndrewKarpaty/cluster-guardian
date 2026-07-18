@@ -22,6 +22,7 @@ var (
 	flagVerbose    bool
 	flagNoColor    bool
 	flagFramework  string
+	flagFailBelow  int
 )
 
 // failError carries the exit code for --fail-on threshold violations, so CI
@@ -100,6 +101,9 @@ var analyzeCmd = &cobra.Command{
 }
 
 func checkFailThreshold(r *report.Report) error {
+	if flagFailBelow > 0 && r.Summary.Score < flagFailBelow {
+		return failError{code: 2}
+	}
 	highest := r.MaxSeverity()
 	switch flagFailOn {
 	case "", "none":
@@ -125,6 +129,7 @@ func init() {
 		f.StringVar(&flagOutputFile, "output-file", "", "write the report to a file instead of stdout")
 		f.StringVar(&flagFailOn, "fail-on", "none", "exit non-zero if findings reach this severity: none, warning, critical")
 		f.StringVar(&flagFramework, "framework", "", "only show findings mapped to a compliance framework: pss")
+		f.IntVar(&flagFailBelow, "fail-below", 0, "exit non-zero if the health score is below this value (0 = disabled)")
 		f.BoolVarP(&flagVerbose, "verbose", "v", false, "show remediation hints for each finding")
 		f.BoolVar(&flagNoColor, "no-color", false, "disable colored output")
 	}

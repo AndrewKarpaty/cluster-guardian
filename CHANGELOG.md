@@ -14,9 +14,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Certificates section: Ingress TLS certificates expiring within 30 days (critical under 7 days or already expired), Ingresses referencing missing TLS secrets, and cert-manager Certificate resources that are not Ready, detected via the optional-CRD pattern (#22). Only the public `tls.crt` of TLS secrets is retained in memory.
 - Dashboard UX: severity and namespace filters, free-text search, collapsible sections with critical/warning counts in headers, an auto-refresh toggle (uses `?refresh=true`), and JSON/Markdown download buttons (#18). Filters and search also work in exported HTML reports; the live controls appear only in serve mode.
 - Deprecated APIs section: objects still written with deprecated API versions, recovered from managedFields and the last-applied-configuration annotation. Warning when deprecated, critical when the API is removed in the cluster's next minor version or already gone (#15).
+- Cluster health score and grades (#26): every report carries a severity-weighted 0–100 score and A–F grade (overall and per section), shown in the terminal header, dashboard, and JSON summary; `--fail-below <score>` gates CI on it. Scores flow into history entries, so the trend chart can track them.
+- Fleet mode (#42, phases 1–3; subsumes #20): `serve --fleet` turns the server into a hosted multi-cluster scorecard. Clusters register declaratively via Secrets labeled `cluster-guardian.io/secret-type: cluster` (`name`, `server`, and a `config` JSON with bearer token and CA), the local cluster is included automatically, and a scheduler scans the fleet on `--fleet-interval` with bounded concurrency and per-cluster timeouts. The root page becomes a fleet overview with per-cluster grades linking to scoped dashboards; per-cluster reports, history, and diffs are exposed under `/api/clusters/{name}/...`.
+- Report history and trends (#19): serve mode records every analysis run (`--history-dir` persists them as JSON files across restarts, `--history-limit` caps retention), the dashboard shows a findings-over-time chart and a new/resolved strip, and `/api/history` + `/api/history/diff` expose the data. The run-over-run diff engine (`report.Diff`) normalizes counts in messages so "5 Pods" → "3 Pods" is not reported as a new finding, and is reusable for webhook notifications (#11) and the diff command (#37).
 
 ### Changed
 
+- Project logo (`assets/logo.svg`) shown in the README, dashboard, and fleet page; both pages now ship a favicon.
+- Dashboard and fleet UI restyled on a shared design system: CSS variables with a proper dark theme, refined cards and controls, a circular score gauge color-coded by grade, and focus states for keyboard use.
 - Removed the deprecated Go Report Card badge from the README
 
 ## [0.1.0] - 2026-07-17

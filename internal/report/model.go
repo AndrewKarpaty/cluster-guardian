@@ -82,6 +82,24 @@ type Section struct {
 // MaxSeverity returns the highest severity among the section's findings.
 func (s Section) MaxSeverity() Severity { return maxSeverity(s.Findings) }
 
+// Grade scores just this section's findings on the A-F scale.
+func (s Section) Grade() string { return GradeOf(scoreFindings(s.Findings)) }
+
+func scoreFindings(fs []Finding) int {
+	var critical, warnings, info int
+	for _, f := range fs {
+		switch f.Severity {
+		case SeverityCritical:
+			critical++
+		case SeverityWarning:
+			warnings++
+		case SeverityInfo:
+			info++
+		}
+	}
+	return scoreOf(critical, warnings, info)
+}
+
 // NamespaceSection holds per-namespace workload findings.
 type NamespaceSection struct {
 	Name     string    `json:"name"`
@@ -93,11 +111,43 @@ func (n NamespaceSection) MaxSeverity() Severity { return maxSeverity(n.Findings
 
 // Summary aggregates finding counts across the whole report.
 type Summary struct {
-	Namespaces int `json:"namespaces"`
-	Total      int `json:"totalFindings"`
-	Info       int `json:"info"`
-	Warnings   int `json:"warnings"`
-	Critical   int `json:"critical"`
+	Namespaces int    `json:"namespaces"`
+	Total      int    `json:"totalFindings"`
+	Info       int    `json:"info"`
+	Warnings   int    `json:"warnings"`
+	Critical   int    `json:"critical"`
+	Score      int    `json:"score"`
+	Grade      string `json:"grade"`
+}
+
+// Severity deduction weights for the 0-100 health score.
+const (
+	scoreCostCritical = 15
+	scoreCostWarning  = 4
+	scoreCostInfo     = 1
+)
+
+func scoreOf(critical, warnings, info int) int {
+	score := 100 - scoreCostCritical*critical - scoreCostWarning*warnings - scoreCostInfo*info
+	if score < 0 {
+		return 0
+	}
+	return score
+}
+
+// GradeOf maps a 0-100 score onto A-F.
+func GradeOf(score int) string {
+	switch {
+	case score >= 90:
+		return "A"
+	case score >= 80:
+		return "B"
+	case score >= 70:
+		return "C"
+	case score >= 60:
+		return "D"
+	}
+	return "F"
 }
 
 // Report is the full analysis result.
@@ -133,6 +183,8 @@ func (r *Report) Finalize() {
 	for _, sec := range r.Sections {
 		count(sec.Findings)
 	}
+	s.Score = scoreOf(s.Critical, s.Warnings, s.Info)
+	s.Grade = GradeOf(s.Score)
 	r.Summary = s
 }
 
