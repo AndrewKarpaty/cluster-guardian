@@ -50,6 +50,7 @@ func Analyze(ctx context.Context, snapshot *kube.Snapshot, opts Options) *report
 		Sections: []report.Section{
 			checks.Security(snapshot, namespaces),
 			checks.Monitoring(snapshot, namespaces),
+			checks.Certificates(snapshot, namespaces),
 			checks.GitOps(snapshot),
 			checks.Optimization(ctx, snapshot, namespaces, opts.PrometheusURL),
 		},

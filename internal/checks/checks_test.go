@@ -1,8 +1,15 @@
 package checks
 
 import (
+	"crypto/ecdsa"
+	"crypto/elliptic"
+	"crypto/rand"
+	"crypto/x509"
+	"encoding/pem"
+	"math/big"
 	"strings"
 	"testing"
+	"time"
 
 	appsv1 "k8s.io/api/apps/v1"
 	autoscalingv2 "k8s.io/api/autoscaling/v2"
@@ -12,6 +19,7 @@ import (
 	rbacv1 "k8s.io/api/rbac/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/util/intstr"
 
 	"github.com/AndrewKarpaty/cluster-guardian/internal/kube"
@@ -385,6 +393,94 @@ func TestUnusedFindings(t *testing.T) {
 	}
 	if f := findMessage(fs, "sa-token"); f != nil {
 		t.Errorf("service-account token secrets must never be flagged: %q", f.Message)
+	}
+}
+
+// tlsSecret builds a kubernetes.io/tls Secret holding a freshly generated
+// self-signed certificate that expires at notAfter.
+func tlsSecret(t *testing.T, ns, name string, notAfter time.Time) corev1.Secret {
+	t.Helper()
+	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		t.Fatalf("generating key: %v", err)
+	}
+	tmpl := x509.Certificate{
+		SerialNumber: big.NewInt(1),
+		NotBefore:    notAfter.Add(-365 * 24 * time.Hour),
+		NotAfter:     notAfter,
+	}
+	der, err := x509.CreateCertificate(rand.Reader, &tmpl, &tmpl, &key.PublicKey, key)
+	if err != nil {
+		t.Fatalf("creating certificate: %v", err)
+	}
+	return corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{Namespace: ns, Name: name},
+		Type:       corev1.SecretTypeTLS,
+		Data:       map[string][]byte{"tls.crt": pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: der})},
+	}
+}
+
+func ingressTLS(ns, name string, secretNames ...string) networkingv1.Ingress {
+	var tls []networkingv1.IngressTLS
+	for _, sn := range secretNames {
+		tls = append(tls, networkingv1.IngressTLS{SecretName: sn})
+	}
+	return networkingv1.Ingress{
+		ObjectMeta: metav1.ObjectMeta{Namespace: ns, Name: name},
+		Spec:       networkingv1.IngressSpec{TLS: tls},
+	}
+}
+
+func TestCertificates(t *testing.T) {
+	now := time.Date(2026, 7, 17, 0, 0, 0, 0, time.UTC)
+	day := 24 * time.Hour
+	s := &kube.Snapshot{
+		HasSecretAccess: true,
+		Secrets: []corev1.Secret{
+			tlsSecret(t, "payments", "soon-tls", now.Add(3*day)),
+			tlsSecret(t, "payments", "month-tls", now.Add(20*day)),
+			tlsSecret(t, "payments", "ok-tls", now.Add(90*day)),
+			tlsSecret(t, "payments", "dead-tls", now.Add(-2*day)),
+		},
+		Ingresses: []networkingv1.Ingress{
+			ingressTLS("payments", "web", "soon-tls", "month-tls", "ok-tls", "dead-tls", "ghost-tls"),
+		},
+		HasCertManager: true,
+		Certificates: []unstructured.Unstructured{{Object: map[string]any{
+			"metadata": map[string]any{"namespace": "payments", "name": "api-cert"},
+			"status": map[string]any{"conditions": []any{
+				map[string]any{"type": "Ready", "status": "False", "reason": "IssuerNotFound"},
+			}},
+		}}},
+	}
+
+	fs := certificates(s, []string{"payments"}, now).Findings
+
+	if f := findMessage(fs, `"payments/soon-tls" expires in 3 days`); f == nil || f.Severity != report.SeverityCritical {
+		t.Errorf("expected critical for 3-day expiry, got: %+v", messages(fs))
+	}
+	if f := findMessage(fs, `"payments/month-tls" expires in 20 days`); f == nil || f.Severity != report.SeverityWarning {
+		t.Errorf("expected warning for 20-day expiry, got: %+v", messages(fs))
+	}
+	if f := findMessage(fs, "ok-tls"); f != nil {
+		t.Errorf("90-day certificate must not be flagged: %q", f.Message)
+	}
+	if f := findMessage(fs, `"payments/dead-tls" expired 2 days ago`); f == nil || f.Severity != report.SeverityCritical {
+		t.Errorf("expected critical for expired cert, got: %+v", messages(fs))
+	}
+	if f := findMessage(fs, `missing TLS secret "ghost-tls"`); f == nil || f.Severity != report.SeverityWarning {
+		t.Errorf("expected missing-secret warning, got: %+v", messages(fs))
+	}
+	if f := findMessage(fs, `Certificate "payments/api-cert" is not Ready (IssuerNotFound)`); f == nil {
+		t.Errorf("expected cert-manager not-Ready finding, got: %+v", messages(fs))
+	}
+
+	// Without secret access the missing-secret check must stay silent.
+	noAccess := &kube.Snapshot{
+		Ingresses: []networkingv1.Ingress{ingressTLS("payments", "web", "ghost-tls")},
+	}
+	if fs := certificates(noAccess, []string{"payments"}, now).Findings; len(fs) != 0 {
+		t.Errorf("expected no findings without secret access, got: %+v", messages(fs))
 	}
 }
 

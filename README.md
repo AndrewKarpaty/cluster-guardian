@@ -48,6 +48,7 @@ Cluster Guardian is an open-source tool that analyzes Kubernetes clusters and pr
 * Readiness, Liveness, and Startup Probe validation
 * PodDisruptionBudget coverage and topology spread validation
 * Unused resource detection (ConfigMaps, Secrets, PVCs, Services without pods, dangling Ingress/HPA/PDB targets)
+* TLS certificate checks (Ingress certificates near expiry, missing TLS secrets, cert-manager Certificate readiness)
 * Security checks (root containers, privileged pods, dangerous capabilities, host namespaces, RBAC, Network Policies)
 * Pod Security Standards compliance summary (`--framework pss` shows only PSS-mapped findings)
 * Monitoring validation (Prometheus, Alertmanager, ServiceMonitors, PodMonitors, PrometheusRules)
@@ -159,6 +160,7 @@ cluster-guardian analyze --fail-on warning    # exit code 2 on warnings or worse
 | Security     | Root/privileged containers, dangerous capabilities, host network/PID/IPC, namespaces without NetworkPolicies, wildcard ClusterRoles, cluster-admin ServiceAccounts; findings are tagged with Pod Security Standards controls and summarized per framework |
 | Monitoring   | Prometheus/Alertmanager presence, ServiceMonitor scrape coverage, missing alerts for Redis, PostgreSQL, Kafka, and other stateful services |
 | Hygiene      | Unused ConfigMaps and Secrets, unmounted or unbound PVCs, Services matching no pods, Ingress paths to missing Services, HPAs targeting missing workloads, PDBs selecting nothing |
+| Certificates | Ingress TLS certificates expiring within 30 days (critical under 7), Ingresses referencing missing TLS secrets, cert-manager Certificates not Ready |
 | GitOps       | Argo CD Application health and sync status, Flux Kustomization/HelmRelease readiness                 |
 | Optimization | CPU and memory overprovisioning, estimated from requests vs. actual usage in Prometheus              |
 
@@ -168,7 +170,7 @@ System namespaces (`kube-system`, etc.) are skipped by default; include them wit
 
 - Kubernetes 1.25+ with read-only access (a `view`-like ClusterRole covers most checks; RBAC checks additionally need read access to ClusterRoles and ClusterRoleBindings, and Secret hygiene checks need list access to Secrets — only names and types are read, secret data is never held. Checks whose resources are not readable are skipped silently.)
 - Optional: Prometheus for usage-based optimization checks
-- Optional: Prometheus Operator, Argo CD, or Flux CRDs — detected automatically
+- Optional: Prometheus Operator, Argo CD, Flux, or cert-manager CRDs — detected automatically
 
 ## License
 

@@ -25,6 +25,7 @@ var (
 	gvrArgoApplication = schema.GroupVersionResource{Group: "argoproj.io", Version: "v1alpha1", Resource: "applications"}
 	gvrFluxKustomize   = schema.GroupVersionResource{Group: "kustomize.toolkit.fluxcd.io", Version: "v1", Resource: "kustomizations"}
 	gvrFluxHelm        = schema.GroupVersionResource{Group: "helm.toolkit.fluxcd.io", Version: "v2", Resource: "helmreleases"}
+	gvrCertificate     = schema.GroupVersionResource{Group: "cert-manager.io", Version: "v1", Resource: "certificates"}
 )
 
 // SystemNamespaces are excluded from per-namespace workload checks unless
@@ -39,22 +40,26 @@ var SystemNamespaces = map[string]bool{
 // Snapshot is a point-in-time read of everything the checks need. Checks are
 // pure functions over a Snapshot, which keeps them unit-testable.
 type Snapshot struct {
-	ClusterVersion      string
-	Namespaces          []corev1.Namespace
-	Pods                []corev1.Pod
-	Deployments         []appsv1.Deployment
-	StatefulSets        []appsv1.StatefulSet
-	DaemonSets          []appsv1.DaemonSet
-	Jobs                []batchv1.Job
-	CronJobs            []batchv1.CronJob
-	HPAs                []autoscalingv2.HorizontalPodAutoscaler
-	PDBs                []policyv1.PodDisruptionBudget
-	Services            []corev1.Service
-	Ingresses           []networkingv1.Ingress
-	ConfigMaps          []corev1.ConfigMap
-	Secrets             []corev1.Secret // data is stripped after listing; only metadata and type are kept
-	PVCs                []corev1.PersistentVolumeClaim
-	ServiceAccounts     []corev1.ServiceAccount
+	ClusterVersion  string
+	Namespaces      []corev1.Namespace
+	Pods            []corev1.Pod
+	Deployments     []appsv1.Deployment
+	StatefulSets    []appsv1.StatefulSet
+	DaemonSets      []appsv1.DaemonSet
+	Jobs            []batchv1.Job
+	CronJobs        []batchv1.CronJob
+	HPAs            []autoscalingv2.HorizontalPodAutoscaler
+	PDBs            []policyv1.PodDisruptionBudget
+	Services        []corev1.Service
+	Ingresses       []networkingv1.Ingress
+	ConfigMaps      []corev1.ConfigMap
+	Secrets         []corev1.Secret // data is stripped after listing; only tls.crt survives on TLS secrets
+	PVCs            []corev1.PersistentVolumeClaim
+	ServiceAccounts []corev1.ServiceAccount
+
+	// HasSecretAccess distinguishes "no secrets" from "not allowed to list
+	// secrets"; secret-dependent checks skip when it is false.
+	HasSecretAccess     bool
 	NetworkPolicies     []networkingv1.NetworkPolicy
 	ClusterRoles        []rbacv1.ClusterRole
 	ClusterRoleBindings []rbacv1.ClusterRoleBinding
@@ -70,6 +75,9 @@ type Snapshot struct {
 	HasServiceMonitorCRD bool
 	HasArgoCD            bool
 	HasFlux              bool
+
+	Certificates   []unstructured.Unstructured
+	HasCertManager bool
 }
 
 // AppNamespaces returns namespaces that per-namespace checks should cover.
@@ -151,12 +159,19 @@ func (c *Client) Collect(ctx context.Context, namespaces []string) (*Snapshot, e
 		s.ConfigMaps = v.Items
 	}
 	if v, err := c.Clientset.CoreV1().Secrets(metav1.NamespaceAll).List(ctx, opts); err == nil {
-		// Checks only need names and types; never hold secret payloads in memory.
+		// Never hold secret payloads in memory: keep only the public
+		// certificate of TLS secrets (for expiry checks) and drop the rest.
 		for i := range v.Items {
-			v.Items[i].Data = nil
-			v.Items[i].StringData = nil
+			item := &v.Items[i]
+			if item.Type == corev1.SecretTypeTLS && item.Data["tls.crt"] != nil {
+				item.Data = map[string][]byte{"tls.crt": item.Data["tls.crt"]}
+			} else {
+				item.Data = nil
+			}
+			item.StringData = nil
 		}
 		s.Secrets = v.Items
+		s.HasSecretAccess = true
 	}
 	if v, err := c.Clientset.CoreV1().PersistentVolumeClaims(metav1.NamespaceAll).List(ctx, opts); err == nil {
 		s.PVCs = v.Items
@@ -180,6 +195,7 @@ func (c *Client) Collect(ctx context.Context, namespaces []string) (*Snapshot, e
 		s.FluxHelmReleases = helm
 		s.HasFlux = true
 	}
+	s.Certificates, s.HasCertManager = c.listCRD(ctx, gvrCertificate)
 
 	return s, nil
 }
