@@ -135,6 +135,10 @@ cluster-guardian docs --output-file CLUSTER.md
 cluster-guardian serve --listen 127.0.0.1:8080
 ```
 
+The dashboard supports filtering by severity and namespace, free-text search,
+collapsible sections, an auto-refresh toggle, and JSON/Markdown download
+buttons. Filtering and search also work in `-o html` file exports.
+
 | Endpoint                   | Description                                      |
 |----------------------------|--------------------------------------------------|
 | `GET /`                    | Web dashboard (HTML report)                      |

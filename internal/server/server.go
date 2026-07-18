@@ -40,7 +40,7 @@ func (s *Server) Handler() http.Handler {
 	})
 	mux.HandleFunc("GET /api/report", s.handleReport(report.WriteJSON, "application/json"))
 	mux.HandleFunc("GET /api/report/markdown", s.handleReport(report.WriteMarkdown, "text/markdown; charset=utf-8"))
-	mux.HandleFunc("GET /{$}", s.handleReport(report.WriteHTML, "text/html; charset=utf-8"))
+	mux.HandleFunc("GET /{$}", s.handleReport(report.WriteDashboard, "text/html; charset=utf-8"))
 	return mux
 }
 

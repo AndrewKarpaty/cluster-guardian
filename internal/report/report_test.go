@@ -101,6 +101,32 @@ func TestWriteHTMLEscapes(t *testing.T) {
 	}
 }
 
+func TestWriteDashboard(t *testing.T) {
+	var file, dash bytes.Buffer
+	if err := WriteHTML(&file, sampleReport()); err != nil {
+		t.Fatal(err)
+	}
+	if err := WriteDashboard(&dash, sampleReport()); err != nil {
+		t.Fatal(err)
+	}
+
+	// Client-side filtering ships in both variants.
+	for _, want := range []string{`id="search"`, `id="nsfilter"`, `data-sev="critical"`, `<details class="card" open`} {
+		if !strings.Contains(file.String(), want) || !strings.Contains(dash.String(), want) {
+			t.Errorf("expected %q in both HTML variants", want)
+		}
+	}
+	// Live controls need the REST API and are dashboard-only.
+	for _, live := range []string{`id="autorefresh"`, `href="/api/report"`, `href="/api/report/markdown"`} {
+		if !strings.Contains(dash.String(), live) {
+			t.Errorf("expected %q in dashboard output", live)
+		}
+		if strings.Contains(file.String(), live) {
+			t.Errorf("%q must not appear in file-export HTML", live)
+		}
+	}
+}
+
 func TestWriteMarkdown(t *testing.T) {
 	var buf bytes.Buffer
 	if err := WriteMarkdown(&buf, sampleReport()); err != nil {
