@@ -5,10 +5,11 @@ package checks
 
 import (
 	"fmt"
+	"maps"
+	"slices"
 	"sort"
 	"strings"
 
-	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 
 	"github.com/AndrewKarpaty/cluster-guardian/internal/kube"
@@ -110,7 +111,7 @@ func healthFindings(s *kube.Snapshot, ns string) []report.Finding {
 	}
 
 	var out []report.Finding
-	for _, reason := range sortedKeys(waitingReasons) {
+	for _, reason := range slices.Sorted(maps.Keys(waitingReasons)) {
 		n := waitingReasons[reason]
 		sev := report.SeverityWarning
 		if reason == "CrashLoopBackOff" {
@@ -147,7 +148,7 @@ func healthFindings(s *kube.Snapshot, ns string) []report.Finding {
 // imageFindings flags workloads using mutable :latest (or untagged) images.
 func imageFindings(s *kube.Snapshot, ns string) []report.Finding {
 	var out []report.Finding
-	check := func(kind, name string, spec corev1.PodSpec) {
+	forEachWorkloadPodSpec(s, ns, func(kind, name string, spec corev1.PodSpec) {
 		for _, c := range spec.Containers {
 			if isLatestImage(c.Image) {
 				out = append(out, report.Finding{
@@ -159,27 +160,7 @@ func imageFindings(s *kube.Snapshot, ns string) []report.Finding {
 				return
 			}
 		}
-	}
-	for _, d := range s.Deployments {
-		if d.Namespace == ns {
-			check("Deployment", d.Name, d.Spec.Template.Spec)
-		}
-	}
-	for _, ss := range s.StatefulSets {
-		if ss.Namespace == ns {
-			check("StatefulSet", ss.Name, ss.Spec.Template.Spec)
-		}
-	}
-	for _, ds := range s.DaemonSets {
-		if ds.Namespace == ns {
-			check("DaemonSet", ds.Name, ds.Spec.Template.Spec)
-		}
-	}
-	for _, cj := range s.CronJobs {
-		if cj.Namespace == ns {
-			check("CronJob", cj.Name, cj.Spec.JobTemplate.Spec.Template.Spec)
-		}
-	}
+	})
 	return out
 }
 
@@ -200,13 +181,12 @@ func isLatestImage(image string) bool {
 // probeFindings flags containers missing readiness/liveness probes.
 func probeFindings(s *kube.Snapshot, ns string) []report.Finding {
 	var noReadiness, noLiveness int
-	seen := map[string]bool{}
-	countSpec := func(kind, name string, spec corev1.PodSpec) {
-		key := kind + "/" + name
-		if seen[key] {
+	forEachWorkloadPodSpec(s, ns, func(kind, _ string, spec corev1.PodSpec) {
+		// CronJob containers are short-lived and don't serve traffic, so
+		// probes are not expected on them.
+		if kind == "CronJob" {
 			return
 		}
-		seen[key] = true
 		for _, c := range spec.Containers {
 			if c.ReadinessProbe == nil && c.StartupProbe == nil {
 				noReadiness++
@@ -215,22 +195,7 @@ func probeFindings(s *kube.Snapshot, ns string) []report.Finding {
 				noLiveness++
 			}
 		}
-	}
-	for _, d := range s.Deployments {
-		if d.Namespace == ns {
-			countSpec("Deployment", d.Name, d.Spec.Template.Spec)
-		}
-	}
-	for _, ss := range s.StatefulSets {
-		if ss.Namespace == ns {
-			countSpec("StatefulSet", ss.Name, ss.Spec.Template.Spec)
-		}
-	}
-	for _, ds := range s.DaemonSets {
-		if ds.Namespace == ns {
-			countSpec("DaemonSet", ds.Name, ds.Spec.Template.Spec)
-		}
-	}
+	})
 	var out []report.Finding
 	if noReadiness > 0 {
 		out = append(out, report.Finding{
@@ -260,10 +225,12 @@ func availabilityFindings(s *kube.Snapshot, ns string) []report.Finding {
 
 	var out []report.Finding
 	var singleReplica, noHPA []string
+	var deployments int
 	for _, d := range s.Deployments {
 		if d.Namespace != ns {
 			continue
 		}
+		deployments++
 		if d.Spec.Replicas != nil && *d.Spec.Replicas == 1 {
 			singleReplica = append(singleReplica, d.Name)
 		}
@@ -280,7 +247,7 @@ func availabilityFindings(s *kube.Snapshot, ns string) []report.Finding {
 	}
 	if len(noHPA) > 0 {
 		msg := "Missing HorizontalPodAutoscaler"
-		if len(noHPA) < len(deploymentsIn(s, ns)) || len(noHPA) > 1 {
+		if len(noHPA) < deployments || len(noHPA) > 1 {
 			msg = fmt.Sprintf("Missing HorizontalPodAutoscaler for %s", joinLimited(noHPA, 4))
 		}
 		out = append(out, report.Finding{
@@ -290,38 +257,4 @@ func availabilityFindings(s *kube.Snapshot, ns string) []report.Finding {
 		})
 	}
 	return out
-}
-
-func deploymentsIn(s *kube.Snapshot, ns string) []appsv1.Deployment {
-	var out []appsv1.Deployment
-	for _, d := range s.Deployments {
-		if d.Namespace == ns {
-			out = append(out, d)
-		}
-	}
-	return out
-}
-
-func plural(n int, one, many string) string {
-	if n == 1 {
-		return one
-	}
-	return many
-}
-
-func joinLimited(names []string, limit int) string {
-	sort.Strings(names)
-	if len(names) <= limit {
-		return strings.Join(names, ", ")
-	}
-	return fmt.Sprintf("%s and %d more", strings.Join(names[:limit], ", "), len(names)-limit)
-}
-
-func sortedKeys(m map[string]int) []string {
-	keys := make([]string, 0, len(m))
-	for k := range m {
-		keys = append(keys, k)
-	}
-	sort.Strings(keys)
-	return keys
 }

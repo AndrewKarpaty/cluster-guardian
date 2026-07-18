@@ -27,10 +27,7 @@ func Certificates(s *kube.Snapshot, namespaces []string) report.Section {
 // certificates is split from Certificates so tests control the clock.
 func certificates(s *kube.Snapshot, namespaces []string, now time.Time) report.Section {
 	section := report.Section{ID: "certificates", Title: "Certificates", Icon: "🔐"}
-	nsSet := map[string]bool{}
-	for _, ns := range namespaces {
-		nsSet[ns] = true
-	}
+	nsSet := namespaceSet(namespaces)
 
 	// Leaf certificates of TLS secrets, keyed by ns/name.
 	leafCerts := map[string]*x509.Certificate{}

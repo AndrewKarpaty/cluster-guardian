@@ -211,29 +211,12 @@ func referencesIn(s *kube.Snapshot, ns string) nsRefs {
 			addSpec(p.Spec)
 		}
 	}
-	for _, d := range s.Deployments {
-		if d.Namespace == ns {
-			addSpec(d.Spec.Template.Spec)
-		}
-	}
-	for _, ss := range s.StatefulSets {
-		if ss.Namespace == ns {
-			addSpec(ss.Spec.Template.Spec)
-		}
-	}
-	for _, ds := range s.DaemonSets {
-		if ds.Namespace == ns {
-			addSpec(ds.Spec.Template.Spec)
-		}
-	}
+	forEachWorkloadPodSpec(s, ns, func(_, _ string, spec corev1.PodSpec) {
+		addSpec(spec)
+	})
 	for _, j := range s.Jobs {
 		if j.Namespace == ns {
 			addSpec(j.Spec.Template.Spec)
-		}
-	}
-	for _, cj := range s.CronJobs {
-		if cj.Namespace == ns {
-			addSpec(cj.Spec.JobTemplate.Spec.Template.Spec)
 		}
 	}
 	for _, sa := range s.ServiceAccounts {

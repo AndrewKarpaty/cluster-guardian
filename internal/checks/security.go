@@ -2,6 +2,7 @@ package checks
 
 import (
 	"fmt"
+	"slices"
 	"strings"
 
 	corev1 "k8s.io/api/core/v1"
@@ -19,10 +20,7 @@ var dangerousCapabilities = map[string]bool{
 // Security runs cluster-wide security checks.
 func Security(s *kube.Snapshot, namespaces []string) report.Section {
 	sec := report.Section{ID: "security", Title: "Security", Icon: "🔒"}
-	nsSet := map[string]bool{}
-	for _, ns := range namespaces {
-		nsSet[ns] = true
-	}
+	nsSet := namespaceSet(namespaces)
 
 	var rootContainers, privileged, hostNetwork, dangerousCaps int
 	for _, pod := range s.Pods {
@@ -190,10 +188,5 @@ func rbacFindings(s *kube.Snapshot) []report.Finding {
 }
 
 func containsStar(list []string) bool {
-	for _, v := range list {
-		if v == "*" {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(list, "*")
 }

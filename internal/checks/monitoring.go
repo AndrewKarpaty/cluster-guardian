@@ -22,13 +22,10 @@ var statefulComponents = map[string]string{
 // Monitoring validates the Prometheus stack and its coverage.
 func Monitoring(s *kube.Snapshot, namespaces []string) report.Section {
 	sec := report.Section{ID: "monitoring", Title: "Monitoring", Icon: "📊"}
-	nsSet := map[string]bool{}
-	for _, ns := range namespaces {
-		nsSet[ns] = true
-	}
+	nsSet := namespaceSet(namespaces)
 
-	hasPrometheus := hasWorkloadWithImage(s, "prometheus")
-	hasAlertmanager := hasWorkloadWithImage(s, "alertmanager")
+	hasPrometheus := hasPodWithImage(s, "prometheus")
+	hasAlertmanager := hasPodWithImage(s, "alertmanager")
 
 	if !hasPrometheus {
 		sec.Findings = append(sec.Findings, report.Finding{
@@ -71,7 +68,7 @@ func Monitoring(s *kube.Snapshot, namespaces []string) report.Section {
 	return sec
 }
 
-func hasWorkloadWithImage(s *kube.Snapshot, substr string) bool {
+func hasPodWithImage(s *kube.Snapshot, substr string) bool {
 	for _, pod := range s.Pods {
 		for _, c := range pod.Spec.Containers {
 			if strings.Contains(c.Image, substr) {
@@ -163,13 +160,13 @@ func componentsWithoutAlerts(s *kube.Snapshot, nsSet map[string]bool) []string {
 	for _, pr := range s.PrometheusRules {
 		groups, _, _ := unstructured.NestedSlice(pr.Object, "spec", "groups")
 		for _, g := range groups {
-			gm, ok := g.(map[string]interface{})
+			gm, ok := g.(map[string]any)
 			if !ok {
 				continue
 			}
 			rules, _, _ := unstructured.NestedSlice(gm, "rules")
 			for _, r := range rules {
-				rm, ok := r.(map[string]interface{})
+				rm, ok := r.(map[string]any)
 				if !ok {
 					continue
 				}

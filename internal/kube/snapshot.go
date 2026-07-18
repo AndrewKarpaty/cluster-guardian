@@ -3,6 +3,7 @@ package kube
 import (
 	"context"
 	"fmt"
+	"slices"
 	"strings"
 
 	appsv1 "k8s.io/api/apps/v1"
@@ -86,11 +87,8 @@ func (s *Snapshot) AppNamespaces(includeSystem bool, only []string) []string {
 	for _, ns := range s.Namespaces {
 		name := ns.Name
 		if len(only) > 0 {
-			for _, o := range only {
-				if o == name {
-					out = append(out, name)
-					break
-				}
+			if slices.Contains(only, name) {
+				out = append(out, name)
 			}
 			continue
 		}

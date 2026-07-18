@@ -27,10 +27,6 @@ import (
 	"github.com/AndrewKarpaty/cluster-guardian/internal/report"
 )
 
-func int32Ptr(v int32) *int32 { return &v }
-func int64Ptr(v int64) *int64 { return &v }
-func boolPtr(v bool) *bool    { return &v }
-
 func pod(ns, name string, mutate func(*corev1.Pod)) corev1.Pod {
 	p := corev1.Pod{
 		ObjectMeta: metav1.ObjectMeta{Namespace: ns, Name: name},
@@ -59,7 +55,7 @@ func deployment(ns, name, image string, replicas int32) appsv1.Deployment {
 	return appsv1.Deployment{
 		ObjectMeta: metav1.ObjectMeta{Namespace: ns, Name: name},
 		Spec: appsv1.DeploymentSpec{
-			Replicas: int32Ptr(replicas),
+			Replicas: new(replicas),
 			Template: corev1.PodTemplateSpec{
 				Spec: corev1.PodSpec{Containers: []corev1.Container{{Name: "app", Image: image}}},
 			},
@@ -89,6 +85,156 @@ func TestIsLatestImage(t *testing.T) {
 	for image, want := range cases {
 		if got := isLatestImage(image); got != want {
 			t.Errorf("isLatestImage(%q) = %v, want %v", image, got, want)
+		}
+	}
+}
+
+func statefulSet(ns, name string, spec corev1.PodSpec) appsv1.StatefulSet {
+	return appsv1.StatefulSet{
+		ObjectMeta: metav1.ObjectMeta{Namespace: ns, Name: name},
+		Spec: appsv1.StatefulSetSpec{
+			Replicas: new(int32(1)),
+			Template: corev1.PodTemplateSpec{Spec: spec},
+		},
+	}
+}
+
+func daemonSet(ns, name string, spec corev1.PodSpec) appsv1.DaemonSet {
+	return appsv1.DaemonSet{
+		ObjectMeta: metav1.ObjectMeta{Namespace: ns, Name: name},
+		Spec:       appsv1.DaemonSetSpec{Template: corev1.PodTemplateSpec{Spec: spec}},
+	}
+}
+
+func cronJob(ns, name string, spec corev1.PodSpec) batchv1.CronJob {
+	return batchv1.CronJob{
+		ObjectMeta: metav1.ObjectMeta{Namespace: ns, Name: name},
+		Spec: batchv1.CronJobSpec{
+			JobTemplate: batchv1.JobTemplateSpec{
+				Spec: batchv1.JobSpec{Template: corev1.PodTemplateSpec{Spec: spec}},
+			},
+		},
+	}
+}
+
+func container(image string) corev1.PodSpec {
+	return corev1.PodSpec{Containers: []corev1.Container{{Name: "app", Image: image}}}
+}
+
+func TestImageFindingsAllWorkloadKinds(t *testing.T) {
+	s := &kube.Snapshot{
+		Deployments: []appsv1.Deployment{
+			deployment("payments", "api", "registry.io/api:latest", 1),
+			deployment("payments", "pinned", "registry.io/app:v1", 1),
+		},
+		StatefulSets: []appsv1.StatefulSet{statefulSet("payments", "db", container("registry.io/db"))},
+		DaemonSets:   []appsv1.DaemonSet{daemonSet("payments", "agent", container("agent:latest"))},
+		CronJobs:     []batchv1.CronJob{cronJob("payments", "backup", container("backup"))},
+	}
+
+	fs := imageFindings(s, "payments")
+
+	for _, want := range []string{
+		`Deployment "api" uses :latest tag`,
+		`StatefulSet "db" uses :latest tag`,
+		`DaemonSet "agent" uses :latest tag`,
+		`CronJob "backup" uses :latest tag`,
+	} {
+		if findMessage(fs, want) == nil {
+			t.Errorf("expected a finding containing %q, got: %+v", want, messages(fs))
+		}
+	}
+	if len(fs) != 4 {
+		t.Errorf("expected exactly 4 findings, got %d: %+v", len(fs), messages(fs))
+	}
+}
+
+func TestProbeFindingsAllWorkloadKinds(t *testing.T) {
+	probed := container("registry.io/app:v1")
+	probed.Containers[0].ReadinessProbe = &corev1.Probe{}
+	probed.Containers[0].LivenessProbe = &corev1.Probe{}
+	probedDeployment := deployment("payments", "ok", "registry.io/app:v1", 1)
+	probedDeployment.Spec.Template.Spec = probed
+
+	s := &kube.Snapshot{
+		Deployments: []appsv1.Deployment{
+			deployment("payments", "api", "registry.io/app:v1", 1),
+			probedDeployment,
+		},
+		StatefulSets: []appsv1.StatefulSet{statefulSet("payments", "db", container("registry.io/db:v1"))},
+		DaemonSets:   []appsv1.DaemonSet{daemonSet("payments", "agent", container("agent:v1"))},
+		// CronJob containers are deliberately not counted: short-lived jobs
+		// don't serve traffic, so probes are not expected on them.
+		CronJobs: []batchv1.CronJob{cronJob("payments", "backup", container("backup:v1"))},
+	}
+
+	fs := probeFindings(s, "payments")
+
+	if f := findMessage(fs, "without readiness or startup probes"); f == nil || !strings.HasPrefix(f.Message, "3 ") {
+		t.Errorf("expected 3 containers without readiness probes, got: %+v", messages(fs))
+	}
+	if f := findMessage(fs, "without liveness probes"); f == nil || !strings.HasPrefix(f.Message, "3 ") {
+		t.Errorf("expected 3 containers without liveness probes, got: %+v", messages(fs))
+	}
+}
+
+func TestReferencesInAllWorkloadKinds(t *testing.T) {
+	withVolume := func(spec corev1.PodSpec, v corev1.VolumeSource) corev1.PodSpec {
+		spec.Volumes = []corev1.Volume{{Name: "v", VolumeSource: v}}
+		return spec
+	}
+	s := &kube.Snapshot{
+		Deployments: []appsv1.Deployment{func() appsv1.Deployment {
+			d := deployment("payments", "api", "registry.io/app:v1", 1)
+			d.Spec.Template.Spec = withVolume(d.Spec.Template.Spec, corev1.VolumeSource{
+				ConfigMap: &corev1.ConfigMapVolumeSource{LocalObjectReference: corev1.LocalObjectReference{Name: "deploy-cm"}},
+			})
+			return d
+		}()},
+		StatefulSets: []appsv1.StatefulSet{statefulSet("payments", "db",
+			withVolume(container("db:v1"), corev1.VolumeSource{
+				Projected: &corev1.ProjectedVolumeSource{Sources: []corev1.VolumeProjection{
+					{Secret: &corev1.SecretProjection{LocalObjectReference: corev1.LocalObjectReference{Name: "sts-secret"}}},
+				}},
+			}))},
+		DaemonSets: []appsv1.DaemonSet{daemonSet("payments", "agent",
+			withVolume(container("agent:v1"), corev1.VolumeSource{
+				Secret: &corev1.SecretVolumeSource{SecretName: "ds-secret"},
+			}))},
+		Jobs: []batchv1.Job{{
+			ObjectMeta: metav1.ObjectMeta{Namespace: "payments", Name: "migrate"},
+			Spec: batchv1.JobSpec{Template: corev1.PodTemplateSpec{Spec: func() corev1.PodSpec {
+				spec := container("migrate:v1")
+				spec.Containers[0].EnvFrom = []corev1.EnvFromSource{
+					{ConfigMapRef: &corev1.ConfigMapEnvSource{LocalObjectReference: corev1.LocalObjectReference{Name: "job-cm"}}},
+				}
+				return spec
+			}()}},
+		}},
+		CronJobs: []batchv1.CronJob{cronJob("payments", "backup", func() corev1.PodSpec {
+			spec := container("backup:v1")
+			spec.Containers[0].Env = []corev1.EnvVar{{Name: "TOKEN", ValueFrom: &corev1.EnvVarSource{
+				SecretKeyRef: &corev1.SecretKeySelector{LocalObjectReference: corev1.LocalObjectReference{Name: "cj-secret"}},
+			}}}
+			return spec
+		}())},
+		ServiceAccounts: []corev1.ServiceAccount{{
+			ObjectMeta:       metav1.ObjectMeta{Namespace: "payments", Name: "app-sa"},
+			ImagePullSecrets: []corev1.LocalObjectReference{{Name: "pull-secret"}},
+		}},
+		Ingresses: []networkingv1.Ingress{ingressTLS("payments", "web", "tls-secret")},
+	}
+
+	refs := referencesIn(s, "payments")
+
+	for _, cm := range []string{"deploy-cm", "job-cm"} {
+		if !refs.configMaps[cm] {
+			t.Errorf("expected ConfigMap %q to be referenced, got: %v", cm, refs.configMaps)
+		}
+	}
+	for _, sec := range []string{"sts-secret", "ds-secret", "cj-secret", "pull-secret", "tls-secret"} {
+		if !refs.secrets[sec] {
+			t.Errorf("expected Secret %q to be referenced, got: %v", sec, refs.secrets)
 		}
 	}
 }
@@ -149,14 +295,14 @@ func TestSecurity(t *testing.T) {
 			pod("payments", "root-pod", nil), // no securityContext at all -> root
 			pod("payments", "nonroot-pod", func(p *corev1.Pod) {
 				p.Spec.Containers[0].SecurityContext = &corev1.SecurityContext{
-					RunAsNonRoot: boolPtr(true), RunAsUser: int64Ptr(1000),
+					RunAsNonRoot: new(true), RunAsUser: new(int64(1000)),
 				}
 			}),
 			pod("payments", "priv-pod", func(p *corev1.Pod) {
-				p.Spec.Containers[0].SecurityContext = &corev1.SecurityContext{Privileged: boolPtr(true)}
+				p.Spec.Containers[0].SecurityContext = &corev1.SecurityContext{Privileged: new(true)}
 			}),
 			pod("secure", "ok-pod", func(p *corev1.Pod) {
-				p.Spec.SecurityContext = &corev1.PodSecurityContext{RunAsNonRoot: boolPtr(true)}
+				p.Spec.SecurityContext = &corev1.PodSecurityContext{RunAsNonRoot: new(true)}
 			}),
 		},
 		NetworkPolicies: []networkingv1.NetworkPolicy{
@@ -253,7 +399,7 @@ func TestDisruptionFindings(t *testing.T) {
 		StatefulSets: []appsv1.StatefulSet{{
 			ObjectMeta: metav1.ObjectMeta{Namespace: "payments", Name: "db"},
 			Spec: appsv1.StatefulSetSpec{
-				Replicas: int32Ptr(3),
+				Replicas: new(int32(3)),
 				Template: corev1.PodTemplateSpec{
 					ObjectMeta: metav1.ObjectMeta{Labels: map[string]string{"app": "db"}},
 					Spec:       corev1.PodSpec{Containers: []corev1.Container{{Name: "db", Image: "img:v1"}}},

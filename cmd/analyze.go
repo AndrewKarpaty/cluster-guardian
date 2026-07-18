@@ -32,8 +32,7 @@ type failError struct{ code int }
 func (e failError) Error() string { return "findings at or above the --fail-on threshold" }
 
 func failCode(err error) (int, bool) {
-	var fe failError
-	if errors.As(err, &fe) {
+	if fe, ok := errors.AsType[failError](err); ok {
 		return fe.code, true
 	}
 	return 0, false

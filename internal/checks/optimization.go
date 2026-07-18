@@ -92,10 +92,7 @@ func overprovisionFinding(resource string, utilization float64, detail string) r
 // totalRequests sums container CPU (cores) and memory (bytes) requests of
 // running pods in the given namespaces.
 func totalRequests(s *kube.Snapshot, namespaces []string) (cpuCores, memBytes float64) {
-	nsSet := map[string]bool{}
-	for _, ns := range namespaces {
-		nsSet[ns] = true
-	}
+	nsSet := namespaceSet(namespaces)
 	for _, pod := range s.Pods {
 		if !nsSet[pod.Namespace] || pod.Status.Phase != corev1.PodRunning {
 			continue

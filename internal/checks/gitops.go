@@ -77,7 +77,7 @@ func fluxNotReady(items []unstructured.Unstructured, kind string) []string {
 		conditions, _, _ := unstructured.NestedSlice(item.Object, "status", "conditions")
 		ready := false
 		for _, c := range conditions {
-			cm, ok := c.(map[string]interface{})
+			cm, ok := c.(map[string]any)
 			if !ok {
 				continue
 			}

@@ -48,10 +48,7 @@ var deprecatedAPIs = []apiDeprecation{
 // last-applied-configuration annotation — the same signals kubent uses.
 func Deprecations(s *kube.Snapshot, namespaces []string) report.Section {
 	section := report.Section{ID: "deprecations", Title: "Deprecated APIs", Icon: "⏳"}
-	nsSet := map[string]bool{}
-	for _, ns := range namespaces {
-		nsSet[ns] = true
-	}
+	nsSet := namespaceSet(namespaces)
 	minor := clusterMinor(s.ClusterVersion)
 
 	type hit struct{ api, kind string }

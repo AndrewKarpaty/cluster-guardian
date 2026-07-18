@@ -33,7 +33,7 @@ type apiResponse struct {
 		ResultType string `json:"resultType"`
 		Result     []struct {
 			Metric map[string]string `json:"metric"`
-			Value  [2]interface{}    `json:"value"`
+			Value  [2]any            `json:"value"`
 		} `json:"result"`
 	} `json:"data"`
 	Error string `json:"error"`
